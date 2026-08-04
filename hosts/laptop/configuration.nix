@@ -202,6 +202,9 @@ in
     gnumake         # Make utility
     gcc             # C compiler (needed for some plugins)
     go              # Go language (needed for some plugins)
+    nodejs          # JavaScript runtime
+    bun             # Better-JavaScript runtime
+    deno            # Best-JavaScript runtime
 
     # Fonts (recommended for status line icons)
     nerd-fonts.jetbrains-mono
