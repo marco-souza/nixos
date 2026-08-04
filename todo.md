@@ -9,15 +9,15 @@
 - [x] docker
 - [x] nvim
 - [x] LazyVim + nvim config
-- [ ] Pi Coding agents
+- [x] Pi Coding agents
 - [ ] Lutris
 - [ ] Steam
 
 ## Dotfiles
 
-- [ ] pi configs
-- [ ] bashrc configs
-- [ ] completions configs
-- [ ] aliases configs
-- [ ] wakatime configs
+- [x] pi configs
+- [x] bashrc configs
+- [x] completions configs
+- [x] aliases configs
+- [x] wakatime configs
 
