@@ -55,15 +55,12 @@ in
   # Configure keymap in X11
   services.xserver.xkb = {
     layout = "br";
-    variant = "abnt2";
-    options = "nodeadkeys";
+    variant = "";
+    options = "";
   };
 
   # Configure console keymap
   console.keyMap = "br-abnt2";
-
-  # Enable CUPS to print documents.
-  services.printing.enable = true;
 
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
@@ -142,17 +139,14 @@ in
     defaultEditor = true;
     viAlias = true;
     vimAlias = true;
-    #
-    # configure = {
-    #   customRC = ''
-    #     set number relativenumber
-    #    set clipboard=unnamedplus
-    #    set expandtab
-    #     set shiftwidth=2
-    #     set tabstop=2
-    #     colorscheme default
-    #   '';
-    # };
+  };
+
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      # Add any other libraries your parsers need if the default list fails
+      # glibc
+    ];
   };
 
   programs.git = {
@@ -185,7 +179,7 @@ in
     gnumake         # Make utility
     gcc             # C compiler (needed for some plugins)
     go              # Go language (needed for some plugins)
-  
+
     # Fonts (recommended for status line icons)
     nerd-fonts.jetbrains-mono
     nerd-fonts.fira-code
@@ -201,7 +195,6 @@ in
   # Environment Variables
   environment.variables = {
     BROWSER = "brave";
-    XDG_CONFIG_HOME = "~/.config/nvim";
   };
 
   programs.localsend = {

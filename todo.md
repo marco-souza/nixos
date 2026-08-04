@@ -8,7 +8,7 @@
 - [x] 1password
 - [x] docker
 - [x] nvim
-- [ ] LazyVim + nvim config
+- [x] LazyVim + nvim config
 - [ ] Pi Coding agents
 - [ ] Lutris
 - [ ] Steam
