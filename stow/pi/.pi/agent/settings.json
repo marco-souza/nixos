@@ -1,6 +1,6 @@
 {
   "defaultProvider": "opencode-go",
-  "defaultModel": "glm-5.2",
+  "defaultModel": "kimi-k2.6",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "enabledModels": [
@@ -38,5 +38,5 @@
   "extensions": [
     "/Users/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts"
   ],
-  "lastChangelogVersion": "0.80.6"
+  "lastChangelogVersion": "0.83.0"
 }
