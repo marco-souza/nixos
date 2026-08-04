@@ -1,0 +1,42 @@
+{
+  "defaultProvider": "opencode-go",
+  "defaultModel": "glm-5.2",
+  "defaultThinkingLevel": "high",
+  "hideThinkingBlock": true,
+  "enabledModels": [
+    "opencode/mimo-v2.5-free",
+    "opencode/deepseek-v4-flash-free",
+    "opencode-go/minimax-m3",
+    "ollama_homelab/qwen3.5:9b",
+    "opencode/big-pickle",
+    "opencode-go/kimi-k3",
+    "opencode-go/glm-5.2"
+  ],
+  "theme": "dark",
+  "externalEditor": "nvim",
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "terminal": {
+    "showImages": true,
+    "imageWidthCells": 60
+  },
+  "images": {
+    "autoResize": true,
+    "blockImages": false
+  },
+  "warnings": {
+    "anthropicExtraUsage": false
+  },
+  "extensions": [
+    "/Users/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts"
+  ],
+  "lastChangelogVersion": "0.80.6"
+}

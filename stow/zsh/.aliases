@@ -1,0 +1,85 @@
+#! /bin/bash
+
+alias vim="nvim"
+
+# Linux Aliases
+############
+alias ..="cd .."
+alias ...="cd ../.."
+alias rmf="rm -rf"
+
+# Deno aliases
+##############
+alias dn="deno"
+alias dt="deno task"
+alias dnr="deno run"
+alias dni="deno install"
+alias dnu="deno upgrade --force"
+
+# Bun aliases
+#############
+alias b="bun"
+alias bi="bun install"
+alias br="bun remove"
+alias brun="bun run"
+alias bu="bun upgrade --latest"
+
+# NPM Aliases
+#############
+alias ni="npm i -g"
+alias nr="npm r -g"
+alias nu="npm up -g"
+
+# Mise Aliases
+##############
+alias m="mise"
+alias mr="mise run"
+alias mi="mise install"
+alias mu="mise use"
+
+# Make Aliases
+##############
+alias mk="make"
+
+# Docker Aliases
+################
+alias dk="docker"
+alias dc="docker-compose"
+alias dm="docker-machine"
+alias ds="docker stack"
+alias dsd="docker stack deploy"
+alias dsd="docker stack remove"
+alias dkps="docker container ps"
+
+# Text Editors
+################
+alias vim="nvim"
+alias v="nvim"
+
+# Git Editors
+################
+alias g="git"
+alias ga="git add"
+alias gb="git branch"
+alias gc="git commit"
+alias gd="git diff"
+alias gl="git pull"
+alias gp="git push"
+alias gst="git status"
+alias gco="git checkout"
+
+# Tmux Editors
+################
+alias t="tmux"
+alias tt="tmux a"
+alias ta="tmux attach-session -t"
+alias tl="tmux list-session"
+alias tnw="tmux new-window"
+alias tns="tmux new-session"
+
+# Custom
+################
+alias notes="tnw -c ~/w/marco-souza/notes/ nvim"
+alias dotfiles="tnw -c ~/w/marco-souza/dotfiles/ nvim"
+alias ev="tnw -c ~/.config/nvim/ nvim"
+alias wo="workon"

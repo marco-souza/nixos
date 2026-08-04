@@ -1,0 +1,5 @@
+# Ignore session files (auto-generated)
+.pi/agent/sessions/
+
+# Ignore auth tokens
+.pi/agent/auth.json

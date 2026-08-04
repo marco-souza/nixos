@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 4,
+    "totalEstimatedHours": 14,
+    "prd": "test-prd.md"
+  },
+  "phases": {
+    "design": {
+      "label": "Design",
+      "description": "Initial design and planning",
+      "tasks": ["T001", "T002"]
+    },
+    "implementation": {
+      "label": "Implementation",
+      "description": "Core implementation",
+      "tasks": ["T003", "T004"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Design Schema",
+      "description": "Design the database schema for user management",
+      "phase": "design",
+      "priority": "critical",
+      "estimatedHours": 2,
+      "dependencies": [],
+      "agent": "default",
+      "moeExperts": ["Database Architecture"],
+      "acceptanceCriteria": ["Schema covers all required fields", "Indexes defined"]
+    },
+    {
+      "id": "T002",
+      "title": "Design API",
+      "description": "Design REST API endpoints for user operations",
+      "phase": "design",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": ["T001"],
+      "agent": "default",
+      "moeExperts": ["API Design"],
+      "acceptanceCriteria": ["All CRUD endpoints defined", "OpenAPI spec generated"]
+    },
+    {
+      "id": "T003",
+      "title": "Implement Schema",
+      "description": "Implement database schema with migrations",
+      "phase": "implementation",
+      "priority": "high",
+      "estimatedHours": 4,
+      "dependencies": ["T001"],
+      "agent": "default",
+      "moeExperts": ["Database Implementation"],
+      "acceptanceCriteria": ["Migrations run cleanly", "Tests pass"]
+    },
+    {
+      "id": "T004",
+      "title": "Implement API",
+      "description": "Implement REST API endpoints",
+      "phase": "implementation",
+      "priority": "medium",
+      "estimatedHours": 5,
+      "dependencies": ["T002", "T003"],
+      "agent": "default",
+      "moeExperts": ["API Implementation"],
+      "acceptanceCriteria": ["All endpoints functional", "Integration tests pass"]
+    }
+  ],
+  "agents": {
+    "default": {
+      "role": "Full-stack Developer",
+      "tasks": ["T001", "T002", "T003", "T004"]
+    }
+  }
+}

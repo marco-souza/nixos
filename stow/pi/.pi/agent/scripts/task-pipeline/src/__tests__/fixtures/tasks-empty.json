@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 0,
+    "totalEstimatedHours": 0
+  },
+  "phases": {},
+  "tasks": [],
+  "agents": {}
+}

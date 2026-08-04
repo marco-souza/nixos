@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 5,
+    "totalEstimatedHours": 15
+  },
+  "phases": {
+    "wave1": {
+      "label": "Wave 1",
+      "description": "Independent tasks",
+      "tasks": ["T001", "T002"]
+    },
+    "wave2": {
+      "label": "Wave 2",
+      "description": "Depends on wave 1",
+      "tasks": ["T003", "T004"]
+    },
+    "wave3": {
+      "label": "Wave 3",
+      "description": "Depends on wave 2",
+      "tasks": ["T005"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Task 1",
+      "description": "Independent task 1",
+      "phase": "wave1",
+      "priority": "high",
+      "estimatedHours": 2,
+      "dependencies": [],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T002",
+      "title": "Task 2",
+      "description": "Independent task 2",
+      "phase": "wave1",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": [],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T003",
+      "title": "Task 3",
+      "description": "Depends on T001",
+      "phase": "wave2",
+      "priority": "medium",
+      "estimatedHours": 4,
+      "dependencies": ["T001"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T004",
+      "title": "Task 4",
+      "description": "Depends on T002",
+      "phase": "wave2",
+      "priority": "medium",
+      "estimatedHours": 3,
+      "dependencies": ["T002"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T005",
+      "title": "Task 5",
+      "description": "Depends on T003 and T004",
+      "phase": "wave3",
+      "priority": "low",
+      "estimatedHours": 3,
+      "dependencies": ["T003", "T004"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    }
+  ],
+  "agents": {
+    "default": {
+      "role": "Developer",
+      "tasks": ["T001", "T002", "T003", "T004", "T005"]
+    }
+  }
+}

@@ -31,6 +31,9 @@ in
   # Set your time zone.
   time.timeZone = "America/Sao_Paulo";
 
+  # Configure console keymap
+  console.keyMap = "br-abnt2";
+
   # Select internationalisation properties.
   i18n.defaultLocale = "en_US.UTF-8";
 
@@ -47,53 +50,55 @@ in
   };
 
   # List services that you want to enable:
+  services = {
+    # Enable the OpenSSH daemon.
+    openssh.enable = true;
 
-  # Enable the OpenSSH daemon.
-  services.openssh.enable = true;
+    # Enable tailscale service.
+    tailscale.enable = true;
 
-  # Enable tailscale service.
-  services.tailscale.enable = true;
+    # WARN: Enable fprintd (not working)
+    # fprintd = {
+    #   enable = true;
+    #   tod.enable = true;
+    #   tod.driver = pkgs.libfprint-2-tod1-goodix;
+    # };
 
-  # Enable fprintd
-  services.fprintd.enable = true;
+    # Enable Desktop Environment.
+    desktopManager.cosmic.enable = true;
+    displayManager.cosmic-greeter.enable = true;
 
-  security.pam.services.login.fprintAuth = true;
-  security.pam.services.sudo.fprintAuth = true;
+    # Configure keymap in X11
+    xserver.xkb = {
+      layout = "br";
+      variant = "";
+      options = "";
+    };
 
-  # Enable Desktop Environment.
-  # services.displayManager.gdm.enable = true;
-  # services.desktopManager.gnome.enable = true;
-  services.desktopManager.cosmic.enable = true;
-  services.displayManager.cosmic-greeter.enable = true;
+    # Enable sound with pipewire.
+    pulseaudio.enable = false;
+    pipewire = {
+      enable = true;
+      alsa.enable = true;
+      alsa.support32Bit = true;
+      pulse.enable = true;
+      # If you want to use JACK applications, uncomment this
+      #jack.enable = true;
 
-  # Configure keymap in X11
-  services.xserver.xkb = {
-    layout = "br";
-    variant = "";
-    options = "";
+      # use the example session manager (no others are packaged yet so this is enabled by default,
+      # no need to redefine it in your config for now)
+      #media-session.enable = true;
+    };
+
+    # Enable touchpad support (enabled default in most desktopManager).
+    libinput.enable = true;
   };
 
-  # Configure console keymap
-  console.keyMap = "br-abnt2";
-
-  # Enable sound with pipewire.
-  services.pulseaudio.enable = false;
   security.rtkit.enable = true;
-  services.pipewire = {
-    enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
-    # If you want to use JACK applications, uncomment this
-    #jack.enable = true;
 
-    # use the example session manager (no others are packaged yet so this is enabled by default,
-    # no need to redefine it in your config for now)
-    #media-session.enable = true;
-  };
-
-  # Enable touchpad support (enabled default in most desktopManager).
-  services.libinput.enable = true;
+  # WARN: Enable fprintd (not working)
+  # security.pam.services.login.fprintAuth = true;
+  # security.pam.services.sudo.fprintAuth = true;
 
   # Docker install
   virtualisation.docker.enable = true;
@@ -128,6 +133,7 @@ in
       theme = "ys";
       plugins = [
         "git"
+        "tmux"
         "mise"
         "docker"
       ];
@@ -256,21 +262,21 @@ in
   system.userActivationScripts.workspace-setup.text = ''
     source ${config.system.build.setEnvironment}
 
+    export PATH="$PATH:${pkgs.stow}/bin/:${pkgs.git}/bin:${pkgs.openssh}/bin"
+
     # ensure workspace exists
     mkdir -p ~/w/marco-souza/
 
     # clone neovim
-    ${pkgs.git}/bin/git clone git@github.com:marco-souza/nvim.git ~/.config/nvim
-    if [ ! -d ~/.config/nvim/ ]; then
-      ${pkgs.git}/bin/git clone \
-        --config core.sshCommand="${pkgs.openssh}/bin/ssh \
-        -o StrictHostKeyChecking=accept-new" \
-        git@github.com:marco-souza/nvim.git ~/.config/nvim
+    if [ -d ~/.config/nvim/ ]; then
+      cd ~/.config/nvim && git pull
     else
-      cd ~/.config/nvim && ${pkgs.git}/bin/git pull
+      git clone \
+        --config core.sshCommand="ssh -o StrictHostKeyChecking=accept-new" \
+        git@github.com:marco-souza/nvim.git ~/.config/nvim
     fi
 
-    # update references
-    cd ~/.config/nvim && ${pkgs.git}/bin/git pull
+    # Stow files
+    cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux mise ghostty pi
   '';
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 2,
+    "totalEstimatedHours": 6
+  },
+  "phases": {
+    "core": {
+      "label": "Core",
+      "description": "Core tasks",
+      "tasks": ["T001", "T002"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Task A",
+      "description": "A task with a missing dependency reference",
+      "phase": "core",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": ["T999"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T002",
+      "title": "Task B",
+      "description": "Another task",
+      "phase": "core",
+      "priority": "medium",
+      "estimatedHours": 3,
+      "dependencies": [],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    }
+  ],
+  "agents": {
+    "default": {
+      "role": "Developer",
+      "tasks": ["T001", "T002"]
+    }
+  }
+}

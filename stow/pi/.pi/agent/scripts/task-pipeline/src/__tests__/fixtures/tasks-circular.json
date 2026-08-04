@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 3,
+    "totalEstimatedHours": 9
+  },
+  "phases": {
+    "core": {
+      "label": "Core",
+      "description": "Core tasks",
+      "tasks": ["T001", "T002", "T003"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Task A",
+      "description": "Task A depends on C",
+      "phase": "core",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": ["T003"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T002",
+      "title": "Task B",
+      "description": "Task B depends on A",
+      "phase": "core",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": ["T001"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    },
+    {
+      "id": "T003",
+      "title": "Task C",
+      "description": "Task C depends on B (circular!)",
+      "phase": "core",
+      "priority": "high",
+      "estimatedHours": 3,
+      "dependencies": ["T002"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["Done"]
+    }
+  ],
+  "agents": {
+    "default": {
+      "role": "Developer",
+      "tasks": ["T001", "T002", "T003"]
+    }
+  }
+}
