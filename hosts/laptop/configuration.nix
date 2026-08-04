@@ -16,6 +16,7 @@ in
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 5;
   boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = "m3o"; # Define your hostname.
@@ -215,7 +216,14 @@ in
     tmux
     ghostty
     lazygit
+    lutris
   ];
+
+  # Enable Steam
+  programs.steam = {
+    enable = true;
+    gamescopeSession.enable = true;
+  };
 
   # Environment Variables
   environment.variables = {
@@ -283,18 +291,16 @@ in
 
     # Wakatime
 
-    if [ -f $HOME/.wakatime.cfg ]; then
-      rm -rf $HOME/.wakatime.cfg
+    if [ ! -f $HOME/.wakatime.cfg ]; then
+      echo "set up wakatime"
+      wakatime_api_secret=$(op item get "$(op item list | grep wakatime | awk '{ print $1 }')" --fields "label=API Secret" --reveal)
+
+      if [ -z "$wakatime_api_secret" ]; then
+        echo "[op]   Wakatime API Secret not found in 1password. Please create an item in 1password with the label 'Wakatime' and a field 'API Secret' containing your Wakatime API key."
+        exit 1
+      fi
+
+      echo -e "\n[settings]\ndebug = false\napi_key = $wakatime_api_secret\n" >"$HOME/.wakatime.cfg"
     fi
-
-    wakatime_api_secret=$(op item get "$(op item list | grep wakatime | awk '{ print $1 }')" --fields "label=API Secret" --reveal)
-
-    if [ -z "$wakatime_api_secret" ]; then
-      echo "[op]   Wakatime API Secret not found in 1password. Please create an item in 1password with the label 'Wakatime' and a field 'API Secret' containing your Wakatime API key."
-      exit 1
-    fi
-
-    echo -e "\n[settings]\ndebug = false\napi_key = $wakatime_api_secret\n" >"$HOME/.wakatime.cfg"
-
   '';
 }

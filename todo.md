@@ -10,8 +10,8 @@
 - [x] nvim
 - [x] LazyVim + nvim config
 - [x] Pi Coding agents
-- [ ] Lutris
-- [ ] Steam
+- [x] Lutris
+- [x] Steam
 
 ## Dotfiles
 
