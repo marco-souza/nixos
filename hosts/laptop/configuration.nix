@@ -125,6 +125,7 @@ in
   programs.zsh = {
     enable = true;
     enableCompletion = true;
+
     syntaxHighlighting.enable = true;
     autosuggestions.enable = true;
 
@@ -134,7 +135,6 @@ in
       plugins = [
         "git"
         "tmux"
-        "mise"
         "docker"
       ];
     };
@@ -186,6 +186,8 @@ in
   environment.systemPackages = with pkgs; [
     # adding cli tools:
     vim
+    mise
+    stow
     wget
     curl
     ripgrep
@@ -210,7 +212,6 @@ in
     tmux
     ghostty
     lazygit
-    mise                 # Mise (The all-in-one dev tool manager)
   ];
 
   # Environment Variables
@@ -262,8 +263,6 @@ in
   system.userActivationScripts.workspace-setup.text = ''
     source ${config.system.build.setEnvironment}
 
-    export PATH="$PATH:${pkgs.stow}/bin/:${pkgs.git}/bin:${pkgs.openssh}/bin"
-
     # ensure workspace exists
     mkdir -p ~/w/marco-souza/
 
@@ -277,6 +276,22 @@ in
     fi
 
     # Stow files
-    cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux mise ghostty pi
+    cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux ghostty pi mise
+
+    # Wakatime
+
+    if [ -f $HOME/.wakatime.cfg ]; then
+      rm -rf $HOME/.wakatime.cfg
+    fi
+
+    wakatime_api_secret=$(op item get "$(op item list | grep wakatime | awk '{ print $1 }')" --fields "label=API Secret" --reveal)
+
+    if [ -z "$wakatime_api_secret" ]; then
+      echo "[op]   Wakatime API Secret not found in 1password. Please create an item in 1password with the label 'Wakatime' and a field 'API Secret' containing your Wakatime API key."
+      exit 1
+    fi
+
+    echo -e "\n[settings]\ndebug = false\napi_key = $wakatime_api_secret\n" >"$HOME/.wakatime.cfg"
+
   '';
 }
