@@ -46,6 +46,20 @@ in
     LC_TIME = "pt_BR.UTF-8";
   };
 
+  # List services that you want to enable:
+
+  # Enable the OpenSSH daemon.
+  services.openssh.enable = true;
+
+  # Enable tailscale service.
+  services.tailscale.enable = true;
+
+  # Enable fprintd
+  services.fprintd.enable = true;
+
+  security.pam.services.login.fprintAuth = true;
+  security.pam.services.sudo.fprintAuth = true;
+
   # Enable Desktop Environment.
   # services.displayManager.gdm.enable = true;
   # services.desktopManager.gnome.enable = true;
@@ -113,7 +127,8 @@ in
       enable = true;
       theme = "ys";
       plugins = [
-	"git"
+        "git"
+        "mise"
         "docker"
       ];
     };
@@ -216,14 +231,6 @@ in
     enable = true;
     enableSSHSupport = true;
   };
-
-  # List services that you want to enable:
-
-  # Enable the OpenSSH daemon.
-  services.openssh.enable = true;
-
-  # Enable tailscale service.
-  services.tailscale.enable = true;
 
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
