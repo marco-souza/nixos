@@ -36,6 +36,7 @@
     "anthropicExtraUsage": false
   },
   "extensions": [
+    "/home/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts",
     "/Users/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts"
   ],
   "lastChangelogVersion": "0.83.0"
