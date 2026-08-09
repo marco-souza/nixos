@@ -147,6 +147,10 @@ in
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
+  # Android Studio
+  nixpkgs.config.android_sdk.accept_license = true;
+
+
   # DisplayLink
   services.xserver.videoDrivers = [ "displaylink" "modesetting" ];
   boot = {
@@ -220,6 +224,7 @@ in
     ghostty
     lazygit
     lutris
+    android-studio
   ];
 
   # Enable Steam
