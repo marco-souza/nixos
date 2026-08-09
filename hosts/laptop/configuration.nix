@@ -20,7 +20,7 @@ in
   boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = "m3o"; # Define your hostname.
-  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
+  # networking.wireless.enable = true;  # Enables wireless suooort via wpa_supplicant.
 
   # Configure network proxy if necessary
   # networking.proxy.default = "http://user:password@proxy:port/";
@@ -118,6 +118,9 @@ in
       # thunderbird
     ];
   };
+
+  # Install Btop
+  programs.htop.enable = true;
 
   # Install Firefox
   programs.firefox.enable = true;
