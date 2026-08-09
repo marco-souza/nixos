@@ -224,7 +224,7 @@ in
     ghostty
     lazygit
     lutris
-    android-studio
+    jetbrains-toolbox
   ];
 
   # Enable Steam
