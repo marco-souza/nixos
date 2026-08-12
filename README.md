@@ -7,9 +7,12 @@ Personal NixOS setup with declarative system configuration and GNU Stow-managed 
 ```bash
 nixos/
 ├── hosts/
-│   └── laptop/
-│       ├── configuration.nix        # System packages, services, and user config
-│       └── hardware-configuration.nix
+│   ├── laptop/
+│   │   └── configuration.nix        # System packages, services, and user config
+│   ├── homelab/
+│   │   └── configuration.nix        # Headless NixOS host
+│   └── macos/
+│       └── configuration.nix        # nix-darwin config (macOS)
 ├── stow/                            # Dotfiles managed by GNU Stow
 │   ├── ghostty/.config/ghostty/     # Terminal emulator config
 │   ├── mise/mise.toml               # Tool version manager
@@ -50,7 +53,22 @@ nixos/
 make apply
 ```
 
-This copies `configuration.nix` and `hardware-configuration.nix` to `/etc/nixos/` and rebuilds.
+This copies `configuration.nix` to `/etc/nixos/` and rebuilds. The machine-specific
+`hardware-configuration.nix` is generated per-host by the NixOS installer and is not
+tracked in this repo.
+
+### Apply macOS Configuration (nix-darwin)
+
+Prerequisites: [Nix](https://nixos.org/download), [nix-darwin](https://github.com/LnL7/nix-darwin), and [Homebrew](https://brew.sh).
+
+```bash
+make macos
+```
+
+This copies `hosts/macos/configuration.nix` to `~/.config/nix-darwin/` and runs
+`darwin-rebuild switch`. GUI apps (Brave, Ghostty, 1Password, JetBrains Toolbox,
+Android Studio, LocalSend) are installed via Homebrew casks; CLI tooling and
+Nerd Fonts come from nixpkgs. Dotfiles are still managed with `stow.sh`.
 
 ### Manage Dotfiles with Stow
 
