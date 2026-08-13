@@ -54,7 +54,7 @@ export interface TasksData {
   };
   phases: Record<string, Phase>;
   tasks: Task[];
-  agents: Record<string, AgentInfo>;
+  agents?: Record<string, AgentInfo>;
 }
 
 /** Resolved status for a single task. */
@@ -326,10 +326,10 @@ export function criticalPath(
       }
     }
 
-    const result = {
-      hours: best!.hours + task.estimatedHours,
-      path: [...best!.path, tid],
-    };
+    const fallback = { hours: task.estimatedHours, path: [tid] };
+    const result = best
+      ? { hours: best.hours + task.estimatedHours, path: [...best.path, tid] }
+      : fallback;
     memo.set(tid, result);
     return result;
   }
@@ -437,7 +437,8 @@ export function scanTaskStatus(
 
 /** Aggregate summary statistics from a loaded tasks.json. */
 export function computeStats(data: TasksData): TaskStats {
-  const { tasks, phases, agents } = data;
+  const { tasks, phases } = data;
+  const agents = data.agents ?? {};
   const totalHours = tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
 
   const phaseStats: Record<string, PhaseStats> = {};

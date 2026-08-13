@@ -116,17 +116,18 @@ task-pipeline validate --quiet && echo "Valid" || echo "Invalid"
 
 #### Validation Checks
 
-The validator performs 9 checks in order:
+The validator performs 10 checks in order:
 
-1. **Required fields** — All tasks have `id`, `title`, `description`, `phase`, `priority`, `estimatedHours`, `dependencies`, `agent`, `moeExperts`, `acceptanceCriteria`
-2. **Unique IDs** — No duplicate task identifiers
-3. **Valid phases** — All tasks reference existing phase keys
-4. **Valid dependencies** — All dependency IDs reference existing tasks
-5. **No cycles** — DAG has no circular dependencies (Kahn's algorithm)
-6. **Phase consistency** — Phase task lists match actual assignments
-7. **Agent consistency** — Agent assignments match task.agent fields
-8. **Valid priorities** — All priorities are `critical`, `high`, `medium`, or `low`
-9. **Metadata consistency** — `totalTasks` and `totalEstimatedHours` match actual values
+1. **Top-level structure** — `tasks` is an array, `phases` is an object
+2. **Required fields** — All tasks have `id`, `title`, `description`, `phase`, `priority`, `estimatedHours`, `dependencies`, `acceptanceCriteria`
+3. **Unique IDs** — No duplicate task identifiers
+4. **Valid phases** — All tasks reference existing phase keys
+5. **Valid dependencies** — All dependency IDs reference existing tasks
+6. **No cycles** — DAG has no circular dependencies (Kahn's algorithm)
+7. **Phase consistency** — Phase task lists match actual assignments
+8. **Agent consistency** — Agent assignments match task.agent fields
+9. **Valid priorities** — All priorities are `critical`, `high`, `medium`, or `low`
+10. **Metadata consistency** — `totalTasks` and `totalEstimatedHours` match actual values
 
 ---
 

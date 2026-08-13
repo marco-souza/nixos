@@ -1,13 +1,12 @@
 {
   "defaultProvider": "opencode-go",
-  "defaultModel": "kimi-k2.6",
-  "defaultThinkingLevel": "high",
+  "defaultModel": "kimi-k3",
+  "defaultThinkingLevel": "max",
   "hideThinkingBlock": true,
   "enabledModels": [
     "opencode/mimo-v2.5-free",
     "opencode/deepseek-v4-flash-free",
     "opencode-go/minimax-m3",
-    "ollama_homelab/qwen3.5:9b",
     "opencode/big-pickle",
     "opencode-go/kimi-k3",
     "opencode-go/glm-5.2"

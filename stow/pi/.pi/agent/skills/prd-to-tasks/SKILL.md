@@ -83,6 +83,12 @@ Break down a PRD into a `tasks.json` that drives implementation.
 | `estimatedHours`     | Yes      | Conservative estimate               |
 | `dependencies`       | Yes      | IDs of prerequisite tasks           |
 | `acceptanceCriteria` | Yes      | Verifiable pass/fail conditions     |
+| `agent`              | No       | Defaults to `"default"`             |
+| `moeExperts`         | No       | Defaults to `[]`                    |
+
+> **Note:** The `agent`, `moeExperts`, and top-level `agents` map are optional.
+> See the [Data Model](../../scripts/task-pipeline/README.md#data-model) in the
+> task-pipeline README for the full schema including optional fields.
 
 ## Workflow
 

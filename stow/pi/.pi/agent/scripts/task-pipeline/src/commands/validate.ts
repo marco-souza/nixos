@@ -47,11 +47,31 @@ export const HELP: HelpSpec = {
 
 // ── Validators ────────────────────────────────────────────────────────
 
+/** Normalize data: fill in optional fields with defaults. */
+function normalizeData(data: TasksData): TasksData {
+  // Default agents to empty map
+  if (!data.agents || typeof data.agents !== "object") {
+    data.agents = {};
+  }
+  // Default task fields
+  for (const t of data.tasks) {
+    if (t.agent === undefined) t.agent = "default";
+    if (t.moeExperts === undefined) t.moeExperts = [];
+  }
+  return data;
+}
+
+function validateTopLevel(data: TasksData): string[] {
+  const errors: string[] = [];
+  if (!Array.isArray(data.tasks)) errors.push("Missing or non-array top-level 'tasks'");
+  if (!data.phases || typeof data.phases !== "object") errors.push("Missing top-level 'phases'");
+  return errors;
+}
+
 function validateRequiredFields(tasks: TasksData["tasks"]): string[] {
   const required = [
     "id", "title", "description", "phase", "priority",
-    "estimatedHours", "dependencies", "agent", "moeExperts",
-    "acceptanceCriteria",
+    "estimatedHours", "dependencies", "acceptanceCriteria",
   ] as const;
   const errors: string[] = [];
   for (const t of tasks) {
@@ -93,9 +113,14 @@ function validatePhaseLists(tasks: TasksData["tasks"], phases: TasksData["phases
 }
 
 function validateAgents(tasks: TasksData["tasks"], agents: TasksData["agents"]): string[] {
+  const agentMap = agents ?? {};
   const errors: string[] = [];
+  if (Object.keys(agentMap).length === 0 && tasks.length > 0) {
+    // No agents map — assign all tasks to "default" implicitly
+    return errors;
+  }
   const allAssigned = new Set<string>();
-  for (const [name, ad] of Object.entries(agents)) {
+  for (const [name, ad] of Object.entries(agentMap)) {
     for (const tid of ad.tasks) {
       allAssigned.add(tid);
       const task = tasks.find((t) => t.id === tid);
@@ -130,7 +155,8 @@ function validateMetadata(tasks: TasksData["tasks"], meta: TasksData["metadata"]
 // ── Output ────────────────────────────────────────────────────────────
 
 function printSummary(data: TasksData) {
-  const { tasks, phases, agents } = data;
+  const { tasks, phases } = data;
+  const agents = data.agents ?? {};
   console.log(`\n${style.bold("Phase Breakdown")}`);
   for (const [key, p] of Object.entries(phases)) {
     const pt = tasks.filter((t) => t.phase === key);
@@ -191,9 +217,14 @@ export async function run(argv: string[]) {
     die(e instanceof TaskError ? e.message : String(e));
   }
 
-  const { tasks, phases, agents, metadata } = data;
+  // Normalize optional fields with defaults
+  normalizeData(data);
+
+  const { tasks, phases, metadata } = data;
+  const agents = data.agents ?? {};
 
   const checks: [string, () => string[]][] = [
+    ["Top-level structure valid", () => validateTopLevel(data)],
     ["All tasks have required fields", () => validateRequiredFields(tasks)],
     ["All task IDs are unique", () => validateUniqueIds(tasks)],
     ["All tasks reference valid phases", () => validatePhases(tasks, phases)],
@@ -207,18 +238,27 @@ export async function run(argv: string[]) {
 
   const quiet = !!flags["--quiet"];
   let allPassed = true;
+  const allErrors: string[] = [];
 
   for (const [label, check] of checks) {
     const errs = check();
     if (errs.length > 0) {
       allPassed = false;
-      for (const e of errs) console.error(`  ${style.red("✗")} ${e}`);
+      for (const e of errs) {
+        allErrors.push(e);
+        console.error(`  ${style.red("✗")} ${e}`);
+      }
     } else if (!quiet) {
       ok(label);
     }
   }
 
-  if (!allPassed) process.exit(1);
+  if (!allPassed) {
+    if (flags["--json"]) {
+      console.log(JSON.stringify({ valid: false, errors: allErrors }, null, 2));
+    }
+    process.exit(1);
+  }
 
   if (flags["--json"]) printJson(data);
   else {
