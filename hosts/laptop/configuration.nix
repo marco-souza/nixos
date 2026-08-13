@@ -115,11 +115,11 @@ in
 
 
     packages = with pkgs; [
-      # thunderbird
+      lsof
     ];
   };
 
-  # Install Btop
+  # Install Htop
   programs.htop.enable = true;
 
   # Install Firefox

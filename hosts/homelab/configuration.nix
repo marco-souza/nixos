@@ -98,9 +98,12 @@ in
 
 
     packages = with pkgs; [
-      # thunderbird
+      lsof
     ];
   };
+
+  # Install Htop
+  programs.htop.enable = true;
 
   # Install Firefox
   programs.firefox.enable = true;
