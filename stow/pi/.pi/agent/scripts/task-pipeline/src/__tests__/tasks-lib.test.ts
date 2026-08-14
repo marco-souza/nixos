@@ -528,3 +528,131 @@ describe("readDoneMarkers", () => {
     expect(done.has("T001")).toBe(true);
   });
 });
+
+// ── Model Tiers ───────────────────────────────────────────────────
+
+import { tierForTask, validateTiers, TIERS, generateRunnerScript } from "../lib/tasks-lib.ts";
+
+function taskWithTags(tags: string[] | undefined): Task {
+  return {
+    id: "T-TIER",
+    title: "tier test",
+    description: "",
+    phase: "test",
+    priority: "medium",
+    estimatedHours: 1,
+    dependencies: [],
+    agent: "default",
+    moeExperts: [],
+    acceptanceCriteria: [],
+    tags,
+  };
+}
+
+describe("TIERS table", () => {
+  test("exposes exactly three tiers on opencode-go", () => {
+    expect(Object.keys(TIERS).sort()).toEqual(["mid", "min", "smart"]);
+    for (const name of ["min", "mid", "smart"] as const) {
+      const spec = TIERS[name];
+      expect(spec.provider).toBe("opencode-go");
+      expect(spec.model).toBeTruthy();
+      expect(spec.thinking).toBeTruthy();
+    }
+  });
+
+  test("smart tier is the most expensive model in the table", () => {
+    expect(TIERS.smart.model).toBe("kimi-k3");
+    expect(TIERS.mid.model).toBe("qwen3.7-plus");
+    expect(TIERS.min.model).toBe("deepseek-v4-flash");
+  });
+});
+
+describe("tierForTask", () => {
+  test("returns 'mid' when no tags are present", () => {
+    expect(tierForTask(taskWithTags(undefined))).toBe("mid");
+    expect(tierForTask(taskWithTags([]))).toBe("mid");
+  });
+
+  test("returns 'mid' when tags do not include a tier tag", () => {
+    expect(tierForTask(taskWithTags(["frontend", "urgent"]))).toBe("mid");
+  });
+
+  test("matches tier tag case-insensitively", () => {
+    expect(tierForTask(taskWithTags(["tier:smart"]))).toBe("smart");
+    expect(tierForTask(taskWithTags(["tier:MID"]))).toBe("mid");
+    expect(tierForTask(taskWithTags(["Tier:Min"]))).toBe("min");
+  });
+
+  test("ignores tags that are not tier tags", () => {
+    expect(tierForTask(taskWithTags(["tierx:smart", "frontend"]))).toBe("mid");
+  });
+
+  test("first tier tag wins when multiple are present", () => {
+    expect(tierForTask(taskWithTags(["tier:smart", "tier:mid"]))).toBe("smart");
+    expect(tierForTask(taskWithTags(["tier:min", "tier:smart"]))).toBe("min");
+  });
+});
+
+describe("validateTiers", () => {
+  test("returns no warnings when every task has exactly one tier tag", () => {
+    const warnings = validateTiers([
+      taskWithTags(["tier:smart"]),
+      { ...taskWithTags(["tier:mid"]), id: "T-MID" },
+      { ...taskWithTags(["tier:min"]), id: "T-MIN" },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  test("warns on tasks missing a tier tag", () => {
+    const warnings = validateTiers([taskWithTags(undefined), taskWithTags(["foo"])]);
+    expect(warnings.length).toBe(2);
+    expect(warnings[0]).toContain("T-TIER");
+    expect(warnings[0]).toContain("default to 'tier:mid'");
+  });
+
+  test("warns when multiple tier tags are present on one task", () => {
+    const warnings = validateTiers([taskWithTags(["tier:smart", "tier:min"])]);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toContain("multiple tier tags");
+    expect(warnings[0]).toContain("smart");
+  });
+});
+
+describe("generateRunnerScript", () => {
+  const tmpDir = join(import.meta.dir, "tmp-runner");
+
+  beforeEach(() => {
+    mkdirSync(tmpDir, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("writes a runner that uses the task's tier model", () => {
+    const smartTask = taskWithTags(["tier:smart"]);
+    const scriptPath = generateRunnerScript(smartTask, "/proj", tmpDir, "hello world");
+    const content = require("node:fs").readFileSync(scriptPath, "utf-8");
+    expect(content).toContain("--model kimi-k3");
+    expect(content).toContain("--thinking max");
+    expect(content).toContain("--provider opencode-go");
+    expect(content).toContain('echo "$PROMPT_B64" | base64 -d');
+  });
+
+  test("falls back to mid model when no tier tag is set", () => {
+    const scriptPath = generateRunnerScript(taskWithTags(undefined), "/proj", tmpDir, "hi");
+    const content = require("node:fs").readFileSync(scriptPath, "utf-8");
+    expect(content).toContain("--model qwen3.7-plus");
+  });
+
+  test("uses deepseek-v4-flash for the min tier", () => {
+    const scriptPath = generateRunnerScript(taskWithTags(["tier:min"]), "/proj", tmpDir, "hi");
+    const content = require("node:fs").readFileSync(scriptPath, "utf-8");
+    expect(content).toContain("--model deepseek-v4-flash");
+  });
+
+  test("completes with a tier-annotated success line", () => {
+    const scriptPath = generateRunnerScript(taskWithTags(["tier:smart"]), "/proj", tmpDir, "hi");
+    const content = require("node:fs").readFileSync(scriptPath, "utf-8");
+    expect(content).toContain("[tier=smart model=kimi-k3]");
+  });
+});

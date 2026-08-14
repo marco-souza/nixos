@@ -1,7 +1,7 @@
 {
   "defaultProvider": "opencode-go",
-  "defaultModel": "kimi-k3",
-  "defaultThinkingLevel": "max",
+  "defaultModel": "minimax-m3",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "enabledModels": [
     "opencode/mimo-v2.5-free",

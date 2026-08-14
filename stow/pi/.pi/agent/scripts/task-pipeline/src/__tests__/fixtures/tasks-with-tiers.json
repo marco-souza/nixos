@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "metadata": {
+    "totalTasks": 3,
+    "totalEstimatedHours": 9
+  },
+  "phases": {
+    "discovery": {
+      "label": "Discovery",
+      "description": "Research and brainstorming",
+      "tasks": ["T001"]
+    },
+    "implementation": {
+      "label": "Implementation",
+      "description": "Build features",
+      "tasks": ["T002"]
+    },
+    "chores": {
+      "label": "Chores",
+      "description": "Validation and cleanup",
+      "tasks": ["T003"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Brainstorm API design",
+      "description": "Generate creative ideas for the new API surface",
+      "phase": "discovery",
+      "priority": "high",
+      "estimatedHours": 2,
+      "dependencies": [],
+      "agent": "designer",
+      "moeExperts": ["API Design", "Product"],
+      "acceptanceCriteria": ["Three viable options documented"],
+      "tags": ["tier:smart"]
+    },
+    {
+      "id": "T002",
+      "title": "Implement /users endpoint",
+      "description": "Build the /users endpoint with tests",
+      "phase": "implementation",
+      "priority": "high",
+      "estimatedHours": 5,
+      "dependencies": ["T001"],
+      "agent": "backend",
+      "moeExperts": ["Backend"],
+      "acceptanceCriteria": ["Endpoint returns 200 with valid user", "Tests pass"],
+      "tags": ["tier:mid"]
+    },
+    {
+      "id": "T003",
+      "title": "Format generated docs",
+      "description": "Run prettier on the generated docs directory",
+      "phase": "chores",
+      "priority": "low",
+      "estimatedHours": 2,
+      "dependencies": ["T002"],
+      "agent": "default",
+      "moeExperts": [],
+      "acceptanceCriteria": ["All docs pass prettier --check"],
+      "tags": ["tier:min"]
+    }
+  ],
+  "agents": {
+    "designer": { "role": "Designer", "tasks": ["T001"] },
+    "backend": { "role": "Backend Engineer", "tasks": ["T002"] },
+    "default": { "role": "Generalist", "tasks": ["T003"] }
+  }
+}

@@ -14,6 +14,9 @@ import {
   readPrompt,
   readDoneMarkers,
   generateRunnerScript,
+  tierForTask,
+  TIERS,
+  getTaskById,
 } from "../lib/tasks-lib.ts";
 import {
   parseArgs,
@@ -66,12 +69,13 @@ function tmuxActive(prefix: string): number {
 // ── Core Logic ───────────────────────────────────────────────────────
 
 function spawnTask(
-  tid: string,
+  task: import("../lib/tasks-lib.ts").Task,
   projectDir: string,
   tasksDir: string,
   sessionPrefix: string,
   dryRun: boolean,
 ): void {
+  const tid = task.id;
   if (existsSync(join(tasksDir, `${tid}.done`))) {
     console.log(`  ${style.dim(`SKIP ${tid}: already done`)}`);
     return;
@@ -81,7 +85,11 @@ function spawnTask(
     console.log(`  ${style.yellow(`SKIP ${tid}: no prompt file`)}`);
     return;
   }
-  const script = generateRunnerScript(tid, projectDir, tasksDir, prompt);
+  const tier = TIERS[tierForTask(task)];
+  if (!dryRun) {
+    console.log(`  ${style.dim(`→ ${tid} [tier=${tier.name} model=${tier.model}]`)}`);
+  }
+  const script = generateRunnerScript(task, projectDir, tasksDir, prompt);
   tmuxSpawn(`${sessionPrefix}-${tid}`, script, dryRun);
 }
 
@@ -102,8 +110,16 @@ async function spawnSpecific(
   tasksDir: string,
   prefix: string,
   dryRun: boolean,
+  tasks: import("../lib/tasks-lib.ts").Task[],
 ) {
-  for (const tid of ids) spawnTask(tid, projectDir, tasksDir, prefix, dryRun);
+  for (const tid of ids) {
+    const task = getTaskById(tasks, tid);
+    if (!task) {
+      console.log(`  ${style.yellow(`SKIP ${tid}: task not found in tasks.json`)}`);
+      continue;
+    }
+    spawnTask(task, projectDir, tasksDir, prefix, dryRun);
+  }
   if (!dryRun) {
     const n = tmuxActive(prefix);
     console.log(`\nActive: ${n} session(s)`);
@@ -129,7 +145,7 @@ async function spawnNextWave(
     return;
   }
   console.log(`Ready: ${ready.map((t) => t.id).join(", ")}\n`);
-  for (const t of ready) spawnTask(t.id, projectDir, tasksDir, prefix, dryRun);
+  for (const t of ready) spawnTask(t, projectDir, tasksDir, prefix, dryRun);
   if (!dryRun) {
     console.log(`\nActive: ${tmuxActive(prefix)} session(s)`);
   }
@@ -155,7 +171,12 @@ async function spawnAllWaves(
     }
     console.log(`\n${style.bold(`Wave ${i + 1}: ${pending.join(", ")}`)}`);
     for (const tid of pending) {
-      spawnTask(tid, projectDir, tasksDir, prefix, dryRun);
+      const task = getTaskById(data.tasks, tid);
+      if (!task) {
+        console.log(`  ${style.yellow(`SKIP ${tid}: task not found in tasks.json`)}`);
+        continue;
+      }
+      spawnTask(task, projectDir, tasksDir, prefix, dryRun);
     }
     if (dryRun) continue;
 
@@ -202,7 +223,8 @@ export async function run(argv: string[]) {
 
   // Dispatch mode
   if (positional.length > 0) {
-    await spawnSpecific(positional, projectDir, tasksDir, sessionPrefix, dryRun);
+    const data = await loadTasks(tasksPath);
+    await spawnSpecific(positional, projectDir, tasksDir, sessionPrefix, dryRun, data.tasks);
   } else if (allMode) {
     await spawnAllWaves(tasksPath, projectDir, tasksDir, sessionPrefix, dryRun);
   } else {

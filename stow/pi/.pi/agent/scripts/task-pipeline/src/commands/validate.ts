@@ -14,8 +14,13 @@ import {
   computeWaves,
   criticalPath,
   computeStats,
+  validateTiers,
+  tierForTask,
+  TIERS,
   TaskError,
   type TasksData,
+  type Task,
+  type Tier,
 } from "../lib/tasks-lib.ts";
 import {
   parseArgs,
@@ -34,6 +39,8 @@ const FLAGS: FlagSpec[] = [
   { name: "--summary", type: "boolean", desc: "Show phase & agent breakdown" },
   { name: "--topo", type: "boolean", desc: "Print topological execution order" },
   { name: "--waves", type: "boolean", desc: "Print parallel execution waves" },
+  { name: "--tiers", type: "boolean", desc: "Print model-tier breakdown" },
+  { name: "--strict-tiers", type: "boolean", desc: "Treat missing/duplicate tier tags as errors" },
   { name: "--json", type: "boolean", desc: "Machine-readable JSON output" },
   { name: "--help", short: "-h", type: "boolean", desc: "Show this help" },
 ];
@@ -193,6 +200,19 @@ function printWaves(tasks: TasksData["tasks"]) {
   });
 }
 
+function printTiers(tasks: Task[]) {
+  console.log(`\n${style.bold("Model-Tier Breakdown")}`);
+  const counts: Record<Tier, string[]> = { min: [], mid: [], smart: [] };
+  for (const t of tasks) counts[tierForTask(t)].push(t.id);
+  (["smart", "mid", "min"] as Tier[]).forEach((name) => {
+    const spec = TIERS[name];
+    const ids = counts[name];
+    const list = ids.length ? ids.join(", ") : "(none)";
+    console.log(`  ${style.cyan(name.padEnd(6))} (${spec.model}, thinking=${spec.thinking}): ${ids.length} task(s)`);
+    console.log(`    ${list}`);
+  });
+}
+
 function printJson(data: TasksData) {
   const order = topologicalSort(data.tasks);
   const waves = computeWaves(data.tasks);
@@ -236,6 +256,9 @@ export async function run(argv: string[]) {
     [`Metadata consistent (${metadata.totalTasks ?? "?"} tasks, ${metadata.totalEstimatedHours ?? "?"}h)`, () => validateMetadata(tasks, metadata)],
   ];
 
+  const strictTiers = !!flags["--strict-tiers"];
+  const tierWarnings = validateTiers(tasks);
+
   const quiet = !!flags["--quiet"];
   let allPassed = true;
   const allErrors: string[] = [];
@@ -255,7 +278,7 @@ export async function run(argv: string[]) {
 
   if (!allPassed) {
     if (flags["--json"]) {
-      console.log(JSON.stringify({ valid: false, errors: allErrors }, null, 2));
+      console.log(JSON.stringify({ valid: false, errors: allErrors, tierWarnings }, null, 2));
     }
     process.exit(1);
   }
@@ -265,6 +288,26 @@ export async function run(argv: string[]) {
     if (flags["--summary"]) printSummary(data);
     if (flags["--topo"]) printTopo(tasks);
     if (flags["--waves"]) printWaves(tasks);
+    if (flags["--tiers"]) printTiers(tasks);
+  }
+
+  // Surface tier warnings (always, even when other checks pass). In --strict-tiers
+  // they become errors that flip the exit code.
+  if (tierWarnings.length > 0) {
+    for (const w of tierWarnings) {
+      if (strictTiers) {
+        console.error(`  ${style.red("✗")} ${w}`);
+        allErrors.push(w);
+      } else {
+        console.log(`  ${style.yellow("⚠")} ${w}`);
+      }
+    }
+    if (strictTiers) {
+      if (flags["--json"]) {
+        console.log(JSON.stringify({ valid: false, errors: allErrors, tierWarnings }, null, 2));
+      }
+      process.exit(1);
+    }
   }
 
   if (!quiet) console.log(`\n${style.green("✓ ALL VALIDATIONS PASSED")}`);

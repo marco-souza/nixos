@@ -83,6 +83,76 @@ export interface TaskStats {
   criticalPath: { hours: number; path: string[] };
 }
 
+// ── Model Tiers ────────────────────────────────────────────────────────
+
+/**
+ * Model-tier names. Each tier maps to a single `opencode-go` model
+ * and a `--thinking` level. Tasks opt into a tier via a `tier:<name>`
+ * tag (case-insensitive). Tasks with no tier tag fall back to `mid`.
+ *
+ * - `min`:  cheapest, for chores / formatting / validation / status.
+ * - `mid`:  balanced, for well-defined implementation tasks.
+ * - `smart`: most capable, for discovery / brainstorming / grooming /
+ *            creative work. Spend intentionally.
+ */
+export type Tier = "min" | "mid" | "smart";
+
+/** A resolved tier mapping: which model and thinking level to spawn. */
+export interface TierSpec {
+  name: Tier;
+  provider: string;
+  model: string;
+  thinking: string;
+}
+
+/** Canonical tier table. One model per tier. Keep it small and intentional. */
+export const TIERS: Record<Tier, TierSpec> = {
+  min:   { name: "min",   provider: "opencode-go", model: "deepseek-v4-flash", thinking: "low"    },
+  mid:   { name: "mid",   provider: "opencode-go", model: "qwen3.7-plus",     thinking: "low"    },
+  smart: { name: "smart", provider: "opencode-go", model: "kimi-k3",          thinking: "max"    },
+};
+
+/** Regex fragment matching a tier tag like `tier:smart`, `tier:mid`, `tier:min`. */
+const TIER_TAG_RE = /^tier:(min|mid|smart)$/i;
+
+/**
+ * Resolve the tier for a task.
+ *
+ * - Reads `task.tags` (optional). First matching `tier:<name>` wins
+ *   (case-insensitive). If multiple match, the first is used and the
+ *   others are silently ignored.
+ * - Tasks without any `tier:*` tag fall back to `mid`.
+ */
+export function tierForTask(task: Task): Tier {
+  const tags = task.tags ?? [];
+  for (const tag of tags) {
+    const m = TIER_TAG_RE.exec(tag.trim());
+    if (m) return m[1].toLowerCase() as Tier;
+  }
+  return "mid";
+}
+
+/**
+ * Validate tier tags across all tasks. Returns warnings for:
+ * - tasks with no `tier:*` tag (fallback to mid)
+ * - tasks with multiple `tier:*` tags (first wins, others ignored)
+ */
+export function validateTiers(tasks: Task[]): string[] {
+  const warnings: string[] = [];
+  for (const t of tasks) {
+    const tags = t.tags ?? [];
+    const matches = tags
+      .map((tag) => tag.trim().match(TIER_TAG_RE))
+      .filter((m): m is RegExpMatchArray => m !== null);
+    if (matches.length === 0) {
+      warnings.push(`${t.id} has no tier tag — will default to 'tier:mid'`);
+    } else if (matches.length > 1) {
+      warnings.push(`${t.id} has multiple tier tags [${matches.map((m) => m[0]).join(", ")}] — using first ('${matches[0][1]}')`);
+    }
+  }
+  return warnings;
+}
+
 // ── Errors ──────────────────────────────────────────────────────────────
 
 /** Domain error for task pipeline operations. */
@@ -495,20 +565,22 @@ export function readPrompt(tasksDir: string, tid: string): string | null {
 
 /** Generate a runner script for a task and return its path. */
 export function generateRunnerScript(
-  tid: string,
+  task: Task,
   projectDir: string,
   tasksDir: string,
   promptContent: string,
 ): string {
+  const tid = task.id;
+  const tier = TIERS[tierForTask(task)];
   const b64 = Buffer.from(promptContent, "utf-8").toString("base64");
   const scriptPath = `/tmp/task-${tid}.sh`;
   const script = `#!/bin/bash
-set -e
+set -eo pipefail
 cd "${projectDir}"
 PROMPT_B64="${b64}"
-pi --thinking low -p "$(echo "$PROMPT_B64" | base64 -d)" 2>&1 | tee "${tasksDir}/${tid}.out"
+pi --provider ${tier.provider} --model ${tier.model} --thinking ${tier.thinking} -p "$(echo "$PROMPT_B64" | base64 -d)" 2>&1 | tee "${tasksDir}/${tid}.out"
 echo "${tid}_DONE" > "${tasksDir}/${tid}.done"
-echo "✓ ${tid} completed at $(date)"
+echo "✓ ${tid} completed at $(date) [tier=${tier.name} model=${tier.model}]"
 `;
   writeFileSync(scriptPath, script, "utf-8");
   chmodSync(scriptPath, 0o755);

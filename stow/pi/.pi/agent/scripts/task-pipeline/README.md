@@ -14,6 +14,7 @@ Provides validation, status tracking, prompt generation, and tmux-based wave spa
   - [prompts](#prompts)
   - [spawn](#spawn)
 - [Data Model](#data-model)
+- [Model Tiers](#model-tiers)
 - [Library API](#library-api)
 - [Integration with Pi Skills](#integration-with-pi-skills)
 - [Logging & Debugging](#logging--debugging)
@@ -95,6 +96,8 @@ task-pipeline validate [path] [options]
 | `--summary` | | Show phase & agent breakdown |
 | `--topo` | | Print topological execution order |
 | `--waves` | | Print parallel execution waves |
+| `--tiers` | | Print model-tier breakdown |
+| `--strict-tiers` | | Treat missing/duplicate tier tags as errors |
 | `--json` | | Machine-readable JSON output |
 | `--help` | `-h` | Show help |
 
@@ -409,6 +412,67 @@ blocked  → No markers, one or more dependencies incomplete
 
 ---
 
+## Model Tiers
+
+Every spawned task runs on one of three **opencode-go** model tiers. Pick the cheapest tier that can do the job — spend intentionally on `smart` only for work that genuinely needs it.
+
+### Tier table
+
+| Tier | Model | Thinking | Use for |
+|------|-------|----------|---------|
+| `min` | `deepseek-v4-flash` | `low` | chores, formatting, validation, status |
+| `mid` | `qwen3.7-plus` | `low` | well-defined implementation tasks (default) |
+| `smart` | `kimi-k3` | `max` | discovery, brainstorming, grooming, creative |
+
+### Dispatch rules
+
+Tasks opt into a tier with a `tags` entry of the form `tier:<name>` (case-insensitive):
+
+```json
+{
+  "id": "T001",
+  "title": "Brainstorm API design",
+  "phase": "discovery",
+  "tags": ["tier:smart"]
+}
+```
+
+- The **first** matching `tier:*` tag wins. Subsequent matches are ignored.
+- Tasks **without** any tier tag default to `mid` and `validate` emits a warning.
+- Tasks with **multiple** tier tags use the first and `validate` warns.
+
+### Checking tier assignments
+
+```bash
+# See which tasks land in each tier
+task-pipeline validate --tiers
+
+# Treat missing/duplicate tier tags as errors (CI-friendly)
+task-pipeline validate --strict-tiers
+```
+
+### Runtime cost (per 1M tokens, opencode-go)
+
+| Tier | Input | Output |
+|---|---|---|
+| `min` | $0.07 | $0.14 |
+| `mid` | $0.40 | $1.60 |
+| `smart` | $3.00 | $15.00 |
+
+A `smart`-tier task is roughly **30× more expensive** than a `min`-tier task per token. Tagging matters.
+
+### Library API
+
+```typescript
+import { TIERS, tierForTask, validateTiers } from "./lib/tasks-lib.ts";
+
+const tier = tierForTask(task);            // "min" | "mid" | "smart"
+const spec = TIERS[tier];                  // { provider, model, thinking }
+const warnings = validateTiers(allTasks);  // missing/duplicate tier tags
+```
+
+---
+
 ## Library API
 
 The `src/lib/tasks-lib.ts` module provides pure domain logic for programmatic use. Import directly in TypeScript/Bun projects:
@@ -447,6 +511,11 @@ import {
   readDoneMarkers,
   readPrompt,
   generateRunnerScript,
+
+  // Model Tiers
+  TIERS,
+  tierForTask,
+  validateTiers,
 
   // Error Handling
   TaskError,
@@ -507,12 +576,24 @@ import {
 | `resolveTasksDir` | `(projectDir?: string) => string` | Return the tasks directory path (default: `cwd/tasks`). |
 | `readDoneMarkers` | `(tasksDir: string) => Set<string>` | Read all completed task IDs from `.done` markers. |
 | `readPrompt` | `(tasksDir: string, tid: string) => string \| null` | Read the content of a prompt file. |
-| `generateRunnerScript` | `(tid, projectDir, tasksDir, promptContent) => string` | Generate a bash runner script for tmux execution. Returns script path. |
+| `generateRunnerScript` | `(task, projectDir, tasksDir, promptContent) => string` | Generate a bash runner script for tmux execution. Resolves the tier from `task.tags` and writes the appropriate `pi` invocation. Returns script path. |
+| `TIERS` | `Record<Tier, TierSpec>` | Canonical opencode-go tier table (`min`/`mid`/`smart`). |
+| `tierForTask` | `(task: Task) => Tier` | Resolve a task's tier from its tags. Defaults to `mid`. |
+| `validateTiers` | `(tasks: Task[]) => string[]` | Return warnings for tasks missing or duplicating `tier:*` tags. |
 
 ### Types
 
 ```typescript
 type TaskStatus = "done" | "running" | "pending" | "blocked";
+
+type Tier = "min" | "mid" | "smart";
+
+interface TierSpec {
+  name: Tier;
+  provider: string;
+  model: string;
+  thinking: string;
+}
 
 interface TaskStats {
   totalTasks: number;
