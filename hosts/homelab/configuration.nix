@@ -120,6 +120,7 @@ in
     packages = with pkgs; [
       lsof
       openssl
+      python3
     ];
   };
 
