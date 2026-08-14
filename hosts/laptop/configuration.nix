@@ -95,6 +95,15 @@ in
     libinput.enable = true;
   };
 
+  # Bluetooth with experimental BlueZ features for stable A2DP/HFP on JBL headsets.
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings.General.Experimental = true;
+    settings.General.FastConnectable = true;
+    settings.Policy.AutoEnable = true;
+  };
+
   security.rtkit.enable = true;
 
   # WARN: Enable fprintd (not working)
@@ -116,6 +125,7 @@ in
 
     packages = with pkgs; [
       lsof
+      openssl
     ];
   };
 
@@ -155,6 +165,15 @@ in
   services.xserver.videoDrivers = [ "displaylink" "modesetting" ];
   boot = {
     extraModulePackages = [ config.boot.kernelPackages.evdi ];
+    # Reduce Wi-Fi/BT coexistence conflicts on Intel AX210 (audio dropouts).
+    extraModprobeConfig = ''
+      options iwlwifi bt_coex_active=0
+      options iwlwifi swcrypto=1
+      options iwlwifi power_save=0
+      options iwlwifi uapsd_disable=1
+      options iwlwifi d0i3_disable=1
+      options iwlmvm power_scheme=1
+    '';
     initrd = {
       # List of modules that are always loaded by the initrd.
       kernelModules = [

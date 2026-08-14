@@ -60,13 +60,24 @@ in
 
     # Enable Desktop Environment.
     desktopManager.cosmic.enable = true;
-    displayManager.cosmic-greeter.enable = true;
 
+    displayManager.cosmic-greeter.enable = true;
     # Configure keymap in X11
     xserver.xkb = {
       layout = "us";
       variant = "";
       options = "";
+    };
+
+    # Configure Remote Desktop
+    xserver = {
+      enable = true;
+      autorun = true;
+    };
+
+    xrdp = {
+      enable = true;
+      openFirewall = true;
     };
 
     # Enable sound with pipewire.
@@ -80,6 +91,15 @@ in
 
     # Enable touchpad support (enabled default in most desktopManager).
     libinput.enable = true;
+  };
+
+  # Bluetooth with experimental BlueZ features for stable A2DP/HFP on JBL headsets.
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings.General.Experimental = true;
+    settings.General.FastConnectable = true;
+    settings.Policy.AutoEnable = true;
   };
 
   security.rtkit.enable = true;
@@ -99,6 +119,7 @@ in
 
     packages = with pkgs; [
       lsof
+      openssl
     ];
   };
 
