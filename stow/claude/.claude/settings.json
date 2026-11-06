@@ -1,3 +1,14 @@
 {
-  "theme": "auto"
+  "extraKnownMarketplaces": {
+    "marco-plugins": {
+      "source": {
+        "source": "directory",
+        "path": "/home/marco/.claude/plugins/marco-plugins"
+      }
+    }
+  },
+  "theme": "auto",
+  "enabledPlugins": {
+    "chrome-relay@marco-plugins": true
+  }
 }

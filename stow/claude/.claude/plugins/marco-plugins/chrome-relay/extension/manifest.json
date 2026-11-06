@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome Relay for Claude",
+  "version": "0.1.0",
+  "description": "Lets a local Claude Code session control this browser through the chrome-relay plugin.",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabs", "scripting", "debugger", "alarms", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Chrome Relay", "default_popup": "popup.html" }
+}

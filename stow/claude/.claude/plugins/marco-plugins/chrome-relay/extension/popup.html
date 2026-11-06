@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; width: 240px; margin: 12px; color: #1f2328; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #999; display: inline-block; }
+  #dot.on { background: #1a7f37; }
+  input { width: 70px; }
+  small { color: #59636e; display: block; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Chrome Relay</h1>
+  <div><span id="dot"></span> <span id="status">checking…</span></div>
+  <div class="row">
+    <label for="port">Port</label>
+    <input id="port" type="number" min="1" max="65535">
+    <button id="save">Save &amp; reconnect</button>
+  </div>
+  <small>Connects to the chrome-relay plugin running in Claude Code. Start a Claude session and it connects within a few seconds.</small>
+  <script src="popup.js"></script>
+</body>
+</html>

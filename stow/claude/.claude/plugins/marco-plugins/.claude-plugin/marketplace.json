@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "marco-plugins",
+  "description": "Personal Claude Code plugins",
+  "owner": { "name": "Marco Souza" },
+  "plugins": [
+    {
+      "name": "chrome-relay",
+      "description": "Drive a Chromium-based browser from Claude via a local WebSocket relay and a companion extension",
+      "source": "./chrome-relay",
+      "category": "productivity"
+    }
+  ]
+}

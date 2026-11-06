@@ -1,0 +1,6 @@
+{
+  "name": "chrome-relay",
+  "version": "0.1.0",
+  "description": "Drive a Chromium-based browser (Chrome, Brave, Edge, Chromium) from Claude via a local relay and a companion extension",
+  "author": { "name": "Marco Souza" }
+}

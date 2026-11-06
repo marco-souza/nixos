@@ -10,3 +10,6 @@
 .claude/cache/
 .claude/backups/
 .claude/skills/synced/
+# Claude-managed plugin state; only our own marketplace is tracked
+.claude/plugins/*
+!.claude/plugins/marco-plugins/
