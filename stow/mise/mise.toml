@@ -8,7 +8,7 @@ WORKSPACE = "{{env.HOME}}/w/"
 
 [tools]
 pi = "latest"
-opencode = "latest"
+claude-code = "latest"
 bun = "latest"
 deno = "latest"
 odin = "dev-2026-06"
