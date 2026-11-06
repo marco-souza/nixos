@@ -37,5 +37,6 @@
   environment.systemPackages = with pkgs; [
     brave
     ghostty
+    (callPackage ../../pkgs/orca-ide.nix { })
   ];
 }
