@@ -10,14 +10,12 @@
     options = "";
   };
 
-  # WARN: fprintd (not working)
-  # services.fprintd = {
-  #   enable = true;
-  #   tod.enable = true;
-  #   tod.driver = pkgs.libfprint-2-tod1-goodix;
-  # };
-  # security.pam.services.login.fprintAuth = true;
-  # security.pam.services.sudo.fprintAuth = true;
+  # Fingerprint: Goodix 27c6:63bc (XPS 9320) is supported natively by
+  # upstream libfprint (goodixmoc driver) — do NOT enable the TOD Goodix
+  # driver, it targets older sensors (27c6:5xxx) and breaks this one.
+  services.fprintd.enable = true;
+  security.pam.services.login.fprintAuth = true;
+  security.pam.services.sudo.fprintAuth = true;
 
   # Android Studio
   nixpkgs.config.android_sdk.accept_license = true;
