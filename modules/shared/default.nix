@@ -23,6 +23,7 @@
     ripgrep
     tmux
     lazygit
+    zenity # GTK dialogs (e.g. Brave's profile-in-use prompt)
 
     # LazyVim dependencies
     fd # Faster find
