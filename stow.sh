@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # stow.sh — Manage dotfiles with GNU Stow
 #
 # Usage:

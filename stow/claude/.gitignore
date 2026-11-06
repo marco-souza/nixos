@@ -1,0 +1,12 @@
+# Only track user config; ~/.claude is a real dir with runtime state.
+# Never commit credentials, sessions, history or caches.
+.claude/.credentials.json
+.claude/history.jsonl
+.claude/sessions/
+.claude/projects/
+.claude/file-history/
+.claude/shell-snapshots/
+.claude/session-env/
+.claude/cache/
+.claude/backups/
+.claude/skills/synced/
