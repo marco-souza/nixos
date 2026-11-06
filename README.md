@@ -1,25 +1,29 @@
 # NixOS Configuration
 
-Personal NixOS setup with declarative system configuration and GNU Stow-managed dotfiles.
+Personal NixOS / nix-darwin setup, defined as a Nix flake, with GNU Stow-managed dotfiles.
 
 ## Structure
 
 ```bash
 nixos/
+├── flake.nix                        # Entry point: one output per machine
+├── flake.lock                       # Pinned nixpkgs / nix-darwin revisions
+├── modules/
+│   ├── shared/default.nix           # Shared by all hosts (CLI tools, fonts, nix settings)
+│   └── nixos/
+│       ├── common.nix               # Base for every NixOS host (user, shell, services)
+│       └── desktop.nix              # COSMIC, audio, bluetooth, GUI apps
 ├── hosts/
-│   ├── laptop/
-│   │   └── configuration.nix        # System packages, services, and user config
-│   ├── homelab/
-│   │   └── configuration.nix        # Headless NixOS host
-│   └── macos/
-│       └── configuration.nix        # nix-darwin config (macOS)
+│   ├── laptop/                      # default.nix + hardware-configuration.nix
+│   ├── homelab/                     # default.nix + hardware-configuration.nix
+│   └── macos/default.nix            # nix-darwin config (macOS)
 ├── stow/                            # Dotfiles managed by GNU Stow
 │   ├── ghostty/.config/ghostty/     # Terminal emulator config
 │   ├── mise/mise.toml               # Tool version manager
 │   ├── pi/.pi/                      # Pi coding agent config + skills
 │   ├── tmux/.tmux.conf              # Terminal multiplexer
 │   └── zsh/                         # Shell config, aliases, utilities
-├── Makefile                         # Apply NixOS configuration
+├── Makefile                         # Shortcuts for rebuild / update / check
 └── stow.sh                          # Dotfile management script
 ```
 
@@ -47,28 +51,35 @@ nixos/
 
 ## Usage
 
-### Apply NixOS Configuration
+Each NixOS machine's hostname equals its flake attribute (`laptop`, `homelab`),
+so `nixos-rebuild` picks the right config automatically.
 
 ```bash
-make apply
+make switch          # sudo nixos-rebuild switch --flake .
+make diff            # build and show what would change vs the running system
+make update          # bump flake.lock (commit it afterwards)
+make check           # evaluate every configuration
+make mac             # macOS: darwin-rebuild switch --flake .
 ```
 
-This copies `configuration.nix` to `/etc/nixos/` and rebuilds. The machine-specific
-`hardware-configuration.nix` is generated per-host by the NixOS installer and is not
-tracked in this repo.
+Flakes only see files tracked by git — `git add` new files before building.
 
-### Apply macOS Configuration (nix-darwin)
+### Adding a new machine
 
-Prerequisites: [Nix](https://nixos.org/download), [nix-darwin](https://github.com/LnL7/nix-darwin), and [Homebrew](https://brew.sh).
+1. Install NixOS with hostname `<name>`, clone this repo to `~/w/marco-souza/nixos`.
+2. Create `hosts/<name>/default.nix` (see `hosts/homelab`) and add
+   `<name> = mkNixos "<name>";` to `flake.nix`.
+3. `make hardware` to copy the generated `hardware-configuration.nix`.
+4. `make switch`.
 
-```bash
-make macos
-```
+If the current hostname doesn't match yet, the first switch needs the name once:
+`sudo nixos-rebuild switch --flake .#<name>`.
 
-This copies `hosts/macos/configuration.nix` to `~/.config/nix-darwin/` and runs
-`darwin-rebuild switch`. GUI apps (Brave, Ghostty, 1Password, JetBrains Toolbox,
-Android Studio, LocalSend) are installed via Homebrew casks; CLI tooling and
-Nerd Fonts come from nixpkgs. Dotfiles are still managed with `stow.sh`.
+### macOS (nix-darwin)
+
+Prerequisites: [Nix](https://nixos.org/download), [nix-darwin](https://github.com/nix-darwin/nix-darwin),
+and [Homebrew](https://brew.sh). Assumes Apple Silicon (`aarch64-darwin`, set in `flake.nix`).
+GUI apps are Homebrew casks; CLI tooling and Nerd Fonts come from nixpkgs.
 
 ### Manage Dotfiles with Stow
 

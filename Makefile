@@ -1,14 +1,32 @@
-laptop:
-	sudo cp hosts/laptop/configuration.nix /etc/nixos/configuration.nix
-	sudo nixos-rebuild switch
+# Thin wrapper around nixos-rebuild / darwin-rebuild.
+# Each machine's hostname equals its flake attribute, so `--flake .`
+# picks the right config automatically.
 
-homelab:
-	sudo cp hosts/homelab/configuration.nix /etc/nixos/configuration.nix
-	sudo nixos-rebuild switch
+NIX := nix --extra-experimental-features 'nix-command flakes'
 
-# macOS (nix-darwin). Requires nix + nix-darwin + Homebrew installed.
-# See: https://github.com/LnL7/nix-darwin
-macos:
-	mkdir -p ~/.config/nix-darwin
-	cp hosts/macos/configuration.nix ~/.config/nix-darwin/configuration.nix
-	darwin-rebuild switch -I darwin-config=$$HOME/.config/nix-darwin/configuration.nix
+.PHONY: switch boot build diff mac update check hardware
+
+switch: ## Apply this machine's config now
+	sudo nixos-rebuild switch --flake .
+
+boot: ## Apply on next boot
+	sudo nixos-rebuild boot --flake .
+
+build: ## Build without applying (result -> ./result)
+	nixos-rebuild build --flake .
+
+diff: build ## Show what would change vs the running system
+	$(NIX) store diff-closures /run/current-system ./result
+
+mac: ## macOS (nix-darwin)
+	sudo darwin-rebuild switch --flake .
+
+update: ## Bump all flake inputs (commit flake.lock afterwards)
+	$(NIX) flake update
+
+check: ## Evaluate all configurations
+	$(NIX) flake check --no-build
+
+hardware: ## Copy this machine's generated hardware config into hosts/<hostname>
+	cp /etc/nixos/hardware-configuration.nix hosts/$$(hostname)/
+	git add hosts/$$(hostname)/hardware-configuration.nix
