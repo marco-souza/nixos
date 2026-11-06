@@ -4,11 +4,7 @@
 {
   imports = [ ./hardware-configuration.nix ];
 
-  services.xserver.xkb = {
-    layout = "us";
-    variant = "";
-    options = "";
-  };
+  services.xserver.xkb.layout = "us";
 
   # Remote desktop
   services.xserver = {

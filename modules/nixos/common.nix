@@ -13,7 +13,7 @@
   networking.networkmanager.enable = true;
 
   # Locale / keyboard
-  console.keyMap = "br-abnt2";
+  console.useXkbConfig = true; # TTY follows each host's xkb layout
   i18n.defaultLocale = "en_US.UTF-8";
   i18n.extraLocaleSettings = {
     LC_ADDRESS = "pt_BR.UTF-8";

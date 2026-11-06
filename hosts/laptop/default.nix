@@ -4,11 +4,8 @@
 {
   imports = [ ./hardware-configuration.nix ];
 
-  services.xserver.xkb = {
-    layout = "br";
-    variant = "";
-    options = "";
-  };
+  # Default layouts (COSMIC keeps its own per-user copy once changed in Settings).
+  services.xserver.xkb.layout = "br,us";
 
   # Fingerprint: Goodix 27c6:63bc (XPS 9320) is supported natively by
   # upstream libfprint (goodixmoc driver) — do NOT enable the TOD Goodix
