@@ -1,14 +1,15 @@
 ---
 name: factory
-description: Run the software factory in the current repo. Use when the user types /skill:factory or /factory <feature>, /factory next, /factory approve <job-id>, /factory rework <job-id> <note>, or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop, which merges into main locally.
+description: Run the software factory in the current repo. Use when the user types /skill:factory or /factory <feature>, /factory next [<n>], /factory approve <job-id>, /factory rework <job-id> <note>, or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop, which merges into main locally.
 ---
 
 # Factory
 
-You are the orchestrator for one job. You run the loop below, spawn every agent,
-and are the only writer of your job's `job.json`. You never write code, specs,
+You are the orchestrator for the job or jobs your session started or was
+handed. You run the loop below for each of them, spawn every agent, and are the
+only writer of each of those jobs' `job.json`. You never write code, specs,
 reviews or decisions yourself. Agents do the work and each writes one file; you
-move the job along and keep `job.json` current.
+move each job along and keep its `job.json` current.
 
 Adapted from zazencodes' software-factory-claude-code (v1, local merge, no PRs).
 This is the pi port of `~/.claude/skills/factory`; keep the two in sync.
@@ -67,9 +68,25 @@ code and say so.
 ## Parallel jobs
 
 Every job runs in its own git worktree on its own branch, so several jobs can run
-at once, one per pi session. Your session orchestrates only the job it
-started or was handed.
+at once, in one pi session or across several. Your session orchestrates the
+job or jobs it started or was handed, and is the only writer of each of those
+jobs' `job.json`.
 
+- Each job follows the loop independently. One job's CHANGES, BLOCKED, ESCALATE
+  or failure never stops or changes another job: a job that stops for a human
+  goes to **Needs human** while the others continue.
+- Jobs are created one after another (steps 1 and 2 of **/factory <feature>**),
+  so their numbers and worktrees never collide. Once created, they advance
+  concurrently.
+- When your session drives more than one job, advance them in waves. A wave is
+  one parallel `subagent` call holding the next step of every job that has one
+  (for example the spec-writer of one job, the three first reviewers of another,
+  the builder of a third), each task with its own job's `cwd`. A wave with more
+  than 8 tasks is split into consecutive calls. After each call, process every
+  returned task with the rules of its job (**Build check**, verdicts into
+  `job.json`, Decide), then start the next wave. Inside one job the order stays
+  the same: the builder alone, then the three reviewers, then
+  `factory-reviewer-ui`.
 - Your session stays in the main checkout. Agents work in the job's worktree.
   The main checkout is the user's, and it may be dirty or on another branch.
   Only **Merge** touches it.
@@ -77,6 +94,7 @@ started or was handed.
   worktree. Each job has its own `job.json`, so sessions never write the same
   file.
 - Each job gets its own dev server ports (see **Prompts**).
+- Merges happen one job at a time (see **Merge**).
 
 ## Files
 
@@ -209,7 +227,9 @@ Set `stage: "approve"`. Run `factory-approver` with the task
 
 ### Merge
 
-The merge happens in the main checkout, so it must be clean and on `main`:
+Merge one job at a time: when several of your jobs are approved, merge each
+when it reaches this step, never two at once. The merge happens in the main
+checkout, so it must be clean and on `main`:
 `git status --porcelain` prints nothing (`factory/` is excluded, so job state
 never counts) and `git branch --show-current` prints `main`. If not, set
 `stage: "needs-human"` and tell the user the job is approved but the main
@@ -223,7 +243,8 @@ git branch -d factory/<job-id>
 ```
 
 Set `stage: "merged"`. If the merge fails, run `git merge --abort` (when a merge
-is in progress), set `stage: "needs-human"` and tell the user why. If removing the
+is in progress), set `stage: "needs-human"` and tell the user why. This
+includes a conflict with lines an earlier parallel job already merged. If removing the
 worktree fails, the job is still merged: tell the user what `git worktree remove`
 printed. Never push and never open a PR: the user pushes `main` themselves.
 
@@ -233,15 +254,21 @@ Set `stage: "needs-human"`. The branch and its worktree stay for the human to
 inspect. Tell the user which job is waiting, give the worktree path, and quote
 `decision.md` (or the BLOCKED reason from `build.md`).
 
-## /factory next
+## /factory next [<n>]
+
+`<n>` is a positive integer. Plain `/factory next` means one item (`<n>` = 1).
 
 Read `factory/backlog.md` and take the first `- [ ]` item. Claim it with one
 Edit that replaces its exact line with `- [x] <item> → claimed`. If the edit
 fails because the line changed, another session claimed it: re-read the backlog
-and try the next `- [ ]` item. If none is left, say so and stop.
+and try the next `- [ ]` item. If none is left, stop claiming.
 
-Run `/factory <item>`, and once step 1 has given it a job id, replace `claimed`
-on its backlog line with the job id.
+Claim up to `<n>` items this way, one at a time. For each claimed item, run steps
+1 and 2 of `/factory <item>` before claiming the next one, and once step 1 has
+given it a job id, replace `claimed` on its backlog line with the job id. Then
+drive every job you created from step 3 (see **Parallel jobs**). If fewer than
+`<n>` items were left, run the ones you got and tell the user how many. If none
+was left, say so and stop.
 
 ## /factory approve <job-id>
 
@@ -274,6 +301,9 @@ asked.
 
 ## Reporting
 
-Keep the user posted with one short line per transition, for example
+Keep the user posted with one short line per transition, each starting with its
+job id, for example
 `003-rate-limiting: round 2, security CHANGES, ux/ui/code PASS → resuming builder`.
-When the job ends, say whether it merged or needs a human, and why.
+When a job ends, say whether it merged or needs a human, and why. When the last
+job of the session ends, give one line per job saying whether it merged or needs
+a human, and why.
