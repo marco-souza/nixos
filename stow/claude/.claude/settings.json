@@ -16,5 +16,6 @@
       }
     }
   },
-  "theme": "auto"
+  "theme": "auto",
+  "model": "sonnet"
 }
