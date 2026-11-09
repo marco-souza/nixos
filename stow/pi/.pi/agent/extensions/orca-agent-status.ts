@@ -787,26 +787,21 @@ export default function (pi): void {
 
   // Why: set only from a finished reply until its settle post, so a later /compact names no old turn.
   let replyFinishedAt: number | undefined
-  let replyAborted = false
 
   function takeCompletedReplyFields(): Record<string, unknown> {
-    const fields = replyAborted
-      ? { interrupted: true }
-      : replyFinishedAt === undefined ? {} : { turn_completed_at: replyFinishedAt }
+    const fields = replyFinishedAt === undefined ? {} : { turn_completed_at: replyFinishedAt }
     replyFinishedAt = undefined
-    replyAborted = false
     return fields
   }
 
   // Why: a run cut off mid-tool, failed or aborted has no finished reply to announce.
   function recordReplyFinish(event): void {
-    let reply: { stopReason?: unknown; errorMessage?: unknown } | undefined
+    let reply: { stopReason?: unknown } | undefined
     for (const message of Array.isArray(event?.messages) ? event.messages : []) {
       if (message?.role === 'assistant') reply = message
     }
     const finished = reply?.stopReason === 'stop' || reply?.stopReason === 'length'
     replyFinishedAt = finished && !isOmpRuntime() ? Date.now() : undefined
-    replyAborted = reply?.stopReason === 'aborted' || (reply?.stopReason === 'error' && /aborted/i.test(String(reply?.errorMessage ?? '')))
   }
 
   onStatus('session_before_compact', (event, ctx) => {
@@ -858,33 +853,6 @@ export default function (pi): void {
   function postSubagentsUpdate(): void {
     if (!hasQueuedPost()) post('subagents_update')
   }
-  function forgetFinishedOmpSubagents(ctx): boolean {
-    const live = new Set<unknown>()
-    try {
-      const running = ctx?.getAsyncJobSnapshot?.()?.running
-      if (!Array.isArray(running)) return false
-      for (const job of running) {
-        if (job?.type !== 'task') continue
-        if (typeof job.agentId !== 'string') return false
-        live.add(job.agentId)
-      }
-      const registry = pi.pi?.AgentRegistry?.global?.()
-      if (typeof registry?.get !== 'function') return false
-      for (const id of lifecycleState.active) {
-        const session = registry.get(id)?.session
-        if (session?.isStreaming === true || session?.hasPendingAsyncWork?.() === true) live.add(id)
-      }
-    } catch {
-      return false
-    }
-    let wasVisible = false
-    for (const id of lifecycleState.active) {
-      if (live.has(id)) continue
-      wasVisible ||= isVisibleSubagent(lifecycleState, id)
-      forgetSubagent(id)
-    }
-    return wasVisible
-  }
   const readLabel = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined
   lifecycleState.onEvent = (event: unknown, forcedStatus?: string): void => {
     if (!event || typeof event !== 'object') return
@@ -895,7 +863,7 @@ export default function (pi): void {
     if (isOmpRuntime() && !lifecycleState.ownsPane) return
     if (status === 'started') {
       lifecycleState.active.add(id)
-      if (!subagentDetails.has(id)) subagentDetails.set(id, { agentType: readLabel(record.agent), description: readLabel(record.description) ?? readLabel(record.workflowKey) ?? (isOmpRuntime() ? id : undefined), startedAt: Date.now(), workflow: record.mode === 'workflow', parent: readLabel(record.parentWorkflowRunId), registration })
+      if (!subagentDetails.has(id)) subagentDetails.set(id, { agentType: readLabel(record.agent), description: readLabel(record.description) ?? readLabel(record.workflowKey), startedAt: Date.now(), workflow: record.mode === 'workflow', parent: readLabel(record.parentWorkflowRunId), registration })
       if (!isTurnInFlight() && (isOmpRuntime() || lifecycleState.runGeneration === 0 || lifecycleState.completionPostedGeneration === lifecycleState.runGeneration)) {
         lifecycleState.waiting = true
         lifecycleState.completionPostedGeneration = -1
@@ -1025,8 +993,7 @@ export default function (pi): void {
     lifecycleState.endedRunGeneration = lifecycleState.runGeneration
     recordReplyFinish(event)
     if (isOmpRuntime()) {
-      const prunedVisible = forgetFinishedOmpSubagents(ctx)
-      if (!postAgentEndOnce() && prunedVisible) postSubagentsUpdate()
+      postAgentEndOnce()
       return
     }
     if (agentSettledSupported) return
