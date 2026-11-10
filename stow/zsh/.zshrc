@@ -17,4 +17,4 @@ plugins=(
 )
 
 # Load Oh My Zsh
-source $ZSH/oh-my-zsh.sh
+[[ -d $ZSH ]] && source $ZSH/oh-my-zsh.sh
