@@ -12,6 +12,13 @@
 .claude/skills/synced/
 .claude/skills/.trash/
 .claude/.last-cleanup
+.claude/remote-*
+.claude/policy-*
+.claude/state/*
+.claude/jobs/*
+.claude/daemon*
+.claude/paste*
+.claude/*needs*
 # Claude-managed plugin state; only our own marketplace is tracked
 .claude/plugins/*
 !.claude/plugins/marco-plugins/

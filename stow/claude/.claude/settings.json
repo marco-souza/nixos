@@ -1,29 +1,5 @@
 {
-  "enabledPlugins": {
-    "chrome-relay@marco-plugins": true,
-    "frontend-design@anthropic-plugin-directory": true,
-    "superpowers@anthropic-plugin-directory": true,
-    "code-review-anthropics@anthropic-plugin-directory": true,
-    "skill-creator@anthropic-plugin-directory": true,
-    "playwright@anthropic-plugin-directory": true,
-    "mattpocock-skills@claude-plugins-official": true
-  },
-  "extraKnownMarketplaces": {
-    "marco-plugins": {
-      "source": {
-        "source": "directory",
-        "path": "/home/marco/.claude/plugins/marco-plugins"
-      }
-    },
-    "marco-plugins-mac": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/marco/.claude/plugins/marco-plugins"
-      }
-    }
-  },
-  "theme": "auto",
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
@@ -196,5 +172,34 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "chrome-relay@marco-plugins": true,
+    "frontend-design@anthropic-plugin-directory": true,
+    "superpowers@anthropic-plugin-directory": true,
+    "code-review-anthropics@anthropic-plugin-directory": true,
+    "skill-creator@anthropic-plugin-directory": true,
+    "playwright@anthropic-plugin-directory": true,
+    "mattpocock-skills@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "marco-plugins": {
+      "source": {
+        "source": "directory",
+        "path": "/home/marco/.claude/plugins/marco-plugins"
+      }
+    },
+    "marco-plugins-mac": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/marco/.claude/plugins/marco-plugins"
+      }
+    }
+  },
+  "modelSettings": {
+    "claude-sonnet-5-5": {
+      "effortLevel": "high"
+    }
+  },
+  "theme": "auto"
 }
