@@ -1,6 +1,6 @@
 ---
 name: factory
-description: Run the software factory in the current repo. Use when the user types /factory <feature>, /factory next [<n>], /factory approve <job-id>, /factory rework <job-id> <note>, or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop, which merges into main locally.
+description: Run the software factory in the current repo. Use when the user types /factory <feature>, /factory next [<n>], /factory approve <job-id>, /factory rework <job-id> <note>, or /factory dashboard. The session that runs it becomes the orchestrator of the spec → build → review → approve loop, which ends in a pull request for the human to review.
 ---
 
 # Factory
@@ -11,7 +11,15 @@ only writer of each of those jobs' `job.json`. You never write code, specs,
 reviews or decisions yourself. Agents do the work and each writes one file; you
 move each job along and keep its `job.json` current.
 
-Adapted from zazencodes' software-factory-claude-code (v1, local merge, no PRs).
+Adapted from zazencodes' software-factory-claude-code (v1, ending in a PR).
+
+## Autonomy
+
+Don't stop to ask the user anything. The user reviews once, at the end, in the
+PR. Recoverable problems are yours to fix: a reviewer that wrote no file gets
+re-run, a failed round goes back to the builder, a job that ran out of rounds
+still ends in a draft PR. Report progress in short lines, but never wait for an
+answer.
 
 ## The loop
 
@@ -20,7 +28,7 @@ feature → spec-writer → builder → [security, code, ux → ui] → WAIT FOR
                            ▲                                      │
                            └──── any CHANGES: resume builder ◄────┤
                                                                   ▼ all PASS
-                                     merge to main ◄─ APPROVE ─ approver ─ ESCALATE → needs-human
+                                     open PR ◄── APPROVE ─ approver ─ ESCALATE → draft PR
 ```
 
 | Step    | Agent (`subagent_type`)     | Writes                                     |
@@ -77,12 +85,12 @@ jobs' `job.json`.
   Browser agents queue across jobs (see **Browser**).
 - Your session stays in the main checkout. Agents work in the job's worktree.
   The main checkout is the user's, and it may be dirty or on another branch.
-  Only **Merge** touches it.
+  Nothing touches it.
 - Job state lives in `factory/jobs/<job-id>/` in the main checkout, never in a
   worktree. Each job has its own `job.json`, so sessions never write the same
   file.
 - Each job gets its own dev server ports (see **Prompts**).
-- Merges happen one job at a time (see **Merge**).
+- PRs are opened one job at a time (see **Open PR**).
 
 ## Files
 
@@ -195,7 +203,11 @@ Read the first line of `build.md`.
    `job.json` straight away, so the dashboard chips fill in as they land. The
    round is done only when all four `review-*.md` files exist in `round-<N>/`.
    Never resume the builder mid-round. If a reviewer finishes without writing
-   its file, or writes a first line that isn't a verdict, stop and tell the user.
+   its file, or writes a first line that isn't a verdict, run it once more with the
+   same prompt. If it again returns its report as text with `VERDICT: PASS` or
+   `VERDICT: CHANGES` on the first line but can't write the file, save that text
+   verbatim to its `review-*.md` (copy it, never edit it or add a verdict of
+   your own). Only if there is still no verdict, go to **Needs human**.
 4. Decide:
    - **All PASS**: go to **Approve**.
    - **Any CHANGES, resumes left**: set `stage: "build"`, then resume the same
@@ -205,44 +217,46 @@ Read the first line of `build.md`.
    - **Any CHANGES, no resumes left**: write `decision.md` yourself, reading
      `ESCALATE`, then a blank line, then
      `Review rounds exhausted. Outstanding CHANGES in round-<N>/ from: <reviewers>.`
-     Go to **Needs human**.
+     Go to **Open PR** (as a draft).
 
 ### Approve
 
 Set `stage: "approve"`. Spawn `factory-approver` with the prompt
 `<paths> Final round: N.` When it finishes, read the first line of `decision.md`:
 
-- `APPROVE`: go to **Merge**.
-- `ESCALATE`: go to **Needs human**.
+- `APPROVE`: go to **Open PR**.
+- `ESCALATE`: go to **Open PR** (as a draft).
 
-### Merge
+### Open PR
 
-Merge one job at a time: when several of your jobs are approved, merge each
-when it reaches this step, never two at once. The merge happens in the main
-checkout, so it must be clean and on `main`:
-`git status --porcelain` prints nothing (`factory/` is excluded, so job state
-never counts) and `git branch --show-current` prints `main`. If not, set
-`stage: "needs-human"` and tell the user the job is approved but the main
-checkout is busy; they run `/factory approve <job-id>` once it is clean.
-Otherwise:
+This is where the human comes in, and the only place. Push and open the PR
+yourself, one job at a time (never two at once), without asking. From `<repo>`:
 
 ```bash
-git merge --no-ff factory/<job-id> -m "Merge factory/<job-id>"
-git worktree remove <worktree>
-git branch -d factory/<job-id>
+git push -u origin factory/<job-id>
+gh pr create --head factory/<job-id> --base main --title "<type>: <lowercase summary>" --body-file factory/jobs/<job-id>/pr.md
 ```
 
-Set `stage: "merged"`. If the merge fails, run `git merge --abort` (when a merge
-is in progress), set `stage: "needs-human"` and tell the user why. This
-includes a conflict with lines an earlier parallel job already merged. If removing the
-worktree fails, the job is still merged: tell the user what `git worktree remove`
-printed. Never push and never open a PR: the user pushes `main` themselves.
+Write `pr.md` first: what the feature does, the acceptance criteria from
+`spec.md` with how each was checked (from `build.md`), the review verdicts per
+round, and any non-blocking notes the reviewers left. Copy these from the job's
+files, don't invent them. Add `--draft` when the decision was `ESCALATE` or the
+review rounds ran out, and start the body with the contents of `decision.md` so
+the human sees what is open. The title follows the repo's commit convention
+from `AGENTS.md`.
+
+Set `stage: "merged"` (here it means "PR opened"). Leave the worktree and
+branch in place, since the PR still needs them. Never merge into `main` and
+never push `main`: the human reviews and merges the PR. If `gh` or the push
+fails (no remote, not logged in), set `stage: "needs-human"` and tell the user
+the exact error and that the branch is ready.
 
 ### Needs human
 
-Set `stage: "needs-human"`. The branch and its worktree stay for the human to
+Only a `STATUS: BLOCKED` build, or a push or PR that failed, ends here. Set
+`stage: "needs-human"`. The branch and its worktree stay for the human to
 inspect. Tell the user which job is waiting, give the worktree path, and quote
-`decision.md` (or the BLOCKED reason from `build.md`).
+the BLOCKED reason from `build.md` (or the error).
 
 ## /factory next [<n>]
 
@@ -262,7 +276,7 @@ was left, say so and stop.
 
 ## /factory approve <job-id>
 
-The job must be in `needs-human`. Run **Merge** with that job id.
+The job must be in `needs-human`. Run **Open PR** with that job id.
 
 ## /factory rework <job-id> <note>
 
@@ -294,6 +308,6 @@ asked.
 Keep the user posted with one short line per transition, each starting with its
 job id, for example
 `003-rate-limiting: round 2, security CHANGES, ux/ui/code PASS → resuming builder`.
-When a job ends, say whether it merged or needs a human, and why. When the last
-job of the session ends, give one line per job saying whether it merged or needs
+When a job ends, say whether it has a PR (with its URL) or needs a human, and why. When the last
+job of the session ends, give one line per job saying whether it has a PR (with its URL) or needs
 a human, and why.
