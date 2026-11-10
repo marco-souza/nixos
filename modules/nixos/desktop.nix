@@ -18,7 +18,8 @@
   # Touchpad support (enabled by default in most desktopManagers).
   services.libinput.enable = true;
 
-  # Bluetooth with experimental BlueZ features for stable A2DP/HFP on JBL headsets.
+  # Bluetooth with experimental BlueZ features: needed for Google Nest speakers
+  # and stable A2DP/HFP on JBL headsets.
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;

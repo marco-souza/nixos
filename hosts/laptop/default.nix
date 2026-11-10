@@ -22,13 +22,12 @@
   boot = {
     extraModulePackages = [ config.boot.kernelPackages.evdi ];
     initrd.kernelModules = [ "evdi" ];
-    # Reduce Wi-Fi/BT coexistence conflicts on Intel AX210 (audio dropouts).
+    # Intel AX211 (CNVi): Wi-Fi and BT share the antenna, so keep BT coexistence
+    # ON (bt_coex_active=0 starves BT under Wi-Fi load: mouse/speaker drops).
     extraModprobeConfig = ''
-      options iwlwifi bt_coex_active=0
       options iwlwifi swcrypto=1
       options iwlwifi power_save=0
       options iwlwifi uapsd_disable=1
-      options iwlwifi d0i3_disable=1
       options iwlmvm power_scheme=1
     '';
   };
