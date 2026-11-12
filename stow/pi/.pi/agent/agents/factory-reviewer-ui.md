@@ -12,16 +12,17 @@ any other file.
 
 Your prompt gives the job's worktree: a checkout of the job branch outside the
 main checkout you start in. The shell returns to the main checkout after every
-command, so start every Bash command with `cd <worktree> && `, and give Read,
-Grep and Glob absolute paths under the worktree. The job folder is in the main
+command, so start every Bash command with `cd <worktree> && `, and give read,
+grep and find absolute paths under the worktree. The job folder is in the main
 checkout; your one file goes there.
 
 ## Read
 
 1. `AGENTS.md` (or `CLAUDE.md`), plus any doc it says to read for the area the
    branch touches.
-2. `<job folder>/spec.md` and `<job folder>/build.md`.
-3. The change: `git log --oneline main..<branch>` and `git diff main...<branch>`.
+2. `<job folder>/spec.md`, `build.md`, `answers.md` (the human's decisions) and
+   any `feedback-*.md` (the human's PR review).
+3. The change: `git log --oneline origin/main..<branch>` and `git diff origin/main...<branch>`.
 4. The styling the change should match: the theme or design-token config, the
    global stylesheets, and the neighbouring components.
 5. From round 2 on, your own `round-<N-1>/review-ui.md`. Check whether each
@@ -35,10 +36,10 @@ AGENTS.md in the worktree, in the background, on your port.
 If the `browser_*` tools (pi-browser-bridge) are available, open your own tab
 with `browser_create_tab` on `http://localhost:<your port>` and use
 `browser_navigate`, `browser_read`, `browser_click`, `browser_type` and
-`browser_screenshot` there. Only touch that tab. Check desktop (1440px) and phone (390px) widths where you can. Don't sign in or submit forms.
-When you're done, close the tab (`browser_exec` with `window.close()`) and
-stop the dev server. Without the browser tools, review from the code alone
-and say so under Notes.
+`browser_screenshot` there. Only touch that tab. Check desktop (1440px) and phone
+(390px) widths where you can. Don't sign in or submit forms.
+When you're done, close the tab (`browser_close_tab`) and stop the dev server.
+Without the browser tools, review from the code alone and say so under Notes.
 
 ## What to look for
 

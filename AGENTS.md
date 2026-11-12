@@ -28,8 +28,11 @@ Agent configs live in stow packages too:
 The factory skill has two copies that must stay in sync:
 `stow/claude/.claude/skills/factory/` + `stow/claude/.claude/agents/factory-*.md`
 and `stow/pi/.pi/agent/skills/factory/` + `stow/pi/.pi/agent/agents/factory-*.md`.
-The pi copy only differs in how it spawns agents (`subagent` tool, no resume)
-and in its skill description. Change one copy, change the other the same way.
+The pi copy only differs in what pi does differently: how it spawns agents
+(`subagent` tool, no resume, no per-agent model), how it interviews (in the
+chat), its browser tools (pi-browser-bridge, which can't save screenshots), its
+tool names and its skill description. Change one copy, change the other the
+same way.
 
 ## Setup for a fresh checkout or worktree
 

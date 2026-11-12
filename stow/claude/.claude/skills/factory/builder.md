@@ -10,8 +10,8 @@ assignment:
 - `Fixes from round-<N>/judge.md for specialist <s>`: fix the items under the
   judge's `## Fixes` tagged `[<s>]`, and only those.
 
-You change code on the branch, commit it, and write one factory file,
-`<job folder>/build.md`. Other builders run before and after you on the same
+You change code on the branch, commit it, and write to two places in the job
+folder: `<job folder>/build.md` and the proof files in `<job folder>/proof/`. Other builders run before and after you on the same
 branch, one at a time.
 
 ## Where you work
@@ -20,15 +20,17 @@ The worktree is a checkout of the job branch outside the main checkout you
 start in. All code changes happen there. The shell returns to the main checkout
 after every command, so start every Bash command with `cd <worktree> && `, and
 give Read, Edit, Write, Grep and Glob absolute paths under the worktree. The job
-folder is in the main checkout; `build.md` is the only file you write there.
-Never edit anything else in the main checkout: it belongs to the user and to
+folder is in the main checkout; `build.md` and `proof/` are all you write
+there. Never edit anything else in the main checkout: it belongs to the user and to
 other jobs.
 
 ## Read first
 
 1. `AGENTS.md` (or `CLAUDE.md`): the canonical repo instructions. Follow them,
-   including any per-area README or doc they point to for the area you touch.
-2. `<job folder>/spec.md`: your task, its "Done when" criteria, the
+   including any per-area README or doc they point to for the area you touch,
+   and the blueprint (the `## Blueprint` section, or the doc it points to).
+2. `<job folder>/spec.md`: your task, its `Pattern:` line, its "Done when"
+   criteria and their `Proof:` lines, the
    requirements, out of scope and assumptions. `<job folder>/answers.md`: the
    human's decisions.
 3. `<job folder>/build.md`, if it exists: what earlier builders did.
@@ -42,6 +44,18 @@ other jobs.
   the first option that works: reuse what's already in the repo, then the
   stdlib, then a native platform feature, then an installed dependency, and
   only then new code. Never add a dependency the spec doesn't require.
+- Follow the pattern. Open the reference file your task's `Pattern:` line
+  names and do the concern the same way: same layers, same helpers, same error
+  handling, same test shape. Never add a second way to do something the
+  blueprint covers. If the pattern can't work for your task, don't improvise
+  one: write BLOCKED and say why.
+- No band-aids. When something fails or is slow, find out why before you
+  change anything. A cache, retry, timeout, special case, guard or index added
+  to make a symptom go away is a band-aid unless you can name the cause it
+  addresses. If the real cause sits in code outside your assignment and you
+  can still meet your criteria, build on it as it is and report it under
+  `### Workarounds`. If you can't meet them without patching around it, write
+  BLOCKED.
 - Stay inside your assignment. Don't redo or "improve" what other tasks built,
   and don't start the next task. If your task needs a change outside your
   specialty that no task covers, make the smallest one that unblocks you and
@@ -66,6 +80,29 @@ other jobs.
   port, and look. Use only `localhost:<your port>`. When you're done, call
   `browser_close` and stop the dev server: the next agent needs the browser.
 
+## Prove
+
+The PR must show the human that the work does what the spec says, so every
+acceptance criterion in your task's "Done when" needs proof, captured from the
+branch as you leave it. The criterion's `Proof:` line says which kind.
+
+- Save it in `<job folder>/proof/` as `ac<k>-<slug>.<ext>`, with `k` the
+  criterion's number: `ac2-empty-state.png`, `ac4-tests.txt`. Several files for
+  one criterion are fine (desktop and mobile, before and after).
+- What a user sees: a screenshot of the page in the state the criterion
+  describes, or a recording of the flow (GIF or video) when AGENTS.md says how
+  to make one. If the browser tool saves the screenshot somewhere else, copy it
+  into `proof/`.
+- Everything else: the command and its real, unedited output in a `.txt` file,
+  first line `$ <command>`. Keep the part that shows the result.
+- Proof is real. Never mock up a page, edit an image or output, or reuse a file
+  from before your last change. If you can't capture proof for a criterion,
+  say so under `### Blocked` and write BLOCKED.
+- Proof gets published with the PR: no secrets, tokens or real personal data in
+  it. Use seed or test data.
+- For fixes: capture again the proof of every criterion your fix touches, under
+  the same file name, so no stale proof is left.
+
 ## Commit
 
 - Commit on the job branch with short one-line messages in the style of
@@ -84,12 +121,18 @@ STATUS: READY
 # Build: <spec title>
 
 ## T1: <task title> (<specialist>)
-Files changed. Each "Done when" criterion: [x] <criterion>: <evidence: the
-command and its result, or what the page showed>. Validation commands run and
-whether each passed.
+Files changed. Pattern followed: <concern>: `<reference file>`. Each "Done
+when" criterion: [x] <criterion>: <evidence: the command and its result, or
+what the page showed> (proof: `proof/ac<k>-<slug>.<ext>`). Validation commands
+run and whether each passed.
+
+### Workarounds
+Only if there are any: <path:line> what you built around, the cause you found,
+and what a proper fix would change.
 
 ## Fixes round <N> (<specialist>)
-Each fix from the judge, and what you did about it.
+Each fix from the judge, the cause you found, and what you did about it. The
+proof files you captured again.
 ```
 
 Write `STATUS: BLOCKED` on the first line instead when you can't finish your

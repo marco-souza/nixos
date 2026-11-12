@@ -62,6 +62,7 @@ Where this lives and how it works today, citing paths. The patterns to reuse.
 ## Acceptance criteria
 1. One observable behaviour plus how to check it: a command to run, a page and
    what it should show, or a file that should contain something.
+   Proof: <screenshot of <page and state> | recording of <flow> | output of `<command>`>
 
 ## Out of scope
 What a reasonable builder might be tempted to do but must not.
@@ -74,6 +75,9 @@ answers are not assumptions.
 ### T1: <title>
 - Specialist: <one from the table>
 - Files: <the paths it creates or changes>
+- Pattern: <the blueprint concern and the reference file to mirror, one per
+  concern the task touches> | new: <the pattern the human chose in answers.md>
+  | none
 - Does: <what to change, concretely>
 - Done when: acceptance criteria <numbers>
 
@@ -98,6 +102,18 @@ T1, T2
   every one is covered by a task's "Done when". Use the repo's real validation
   commands from AGENTS.md. Ask for new tests only where the repo has a test
   runner.
+- Every acceptance criterion has a `Proof:` line saying what will show the
+  human it works: a screenshot or recording for anything a user sees, the
+  output of a command for the rest. The PR can't be opened as ready without
+  it, so the task whose "Done when" covers the criterion must be one whose
+  builder can capture it: only `frontend` and `general` builders have a
+  browser.
+- Every task has a `Pattern:` line, taken from the `## Blueprint` section of
+  `discovery.md`. Name the real reference file. Never introduce a second way
+  to do a concern the blueprint already covers. `new:` is only for a pattern
+  the human chose in the interview; when you use it, a task must also add that
+  pattern, with its reference file, to the repo's blueprint. `none` is for
+  tasks that touch no cross-cutting concern.
 - Include the doc updates the change needs (AGENTS.md and the docs it lists).
 - `## Run` is the last section and one line: the tasks to build now, in order.
   On the first write that's every task. On a revision or a later cycle, list

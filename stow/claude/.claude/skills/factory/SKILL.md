@@ -46,7 +46,7 @@ human reviews PR → /factory feedback <job-id> → discovery (next cycle) → �
 | discovery | `factory-discoverer`          | opus   | `discovery.md`                      |
 | interview | you (`AskUserQuestion`)       |        | `answers.md`                        |
 | spec      | `factory-spec-writer`         | opus   | `spec.md` (requirements + tasks)    |
-| build     | `factory-builder-<specialist>`| sonnet | commits + its section of `build.md` |
+| build     | `factory-builder-<specialist>`| sonnet | commits, `build.md` section, `proof/` |
 | review    | `factory-reviewer-product`    | opus   | `round-N/review-product.md`         |
 |           | `factory-reviewer-security`   | opus   | `round-N/review-security.md`        |
 |           | `factory-reviewer-code`       | opus   | `round-N/review-code.md`            |
@@ -86,6 +86,26 @@ written. Nothing repo-specific lives in these files. If the repo has neither,
 or it doesn't say how to run the validation commands, tell the user before
 starting: the agents will guess.
 
+## Blueprint
+
+The blueprint is the repo's own answer to "how do we do this here": one
+canonical way per cross-cutting concern (auth, permissions, data access, API
+calls, errors, validation, tests, UI building blocks), each pointing at a
+reference file to copy. It lives in a `## Blueprint` section of AGENTS.md or in
+a doc that section points to. The human owns it. Agents follow it and never
+invent a second way next to it:
+
+- the discoverer lists the concerns a request touches and their patterns, and
+  turns a concern with no pattern into an open question;
+- the spec gives every task a `Pattern:` line;
+- builders mirror that pattern, and the code reviewer checks they did;
+- the judge escalates any new pattern or deviation, so the human sees it in
+  the PR.
+
+If the repo has no blueprint, tell the user before starting, once: every job
+will then pick its patterns from the neighbouring code, and two jobs may pick
+differently. Go on with the job.
+
 ## Browser
 
 Pages are checked with the Playwright MCP tools (`mcp__plugin_playwright_*`).
@@ -120,6 +140,7 @@ lands in a commit and never changes the repo's `.gitignore`.
 <repo>/factory/jobs/<job-id>/answers.md          the interview, appended each cycle
 <repo>/factory/jobs/<job-id>/spec.md             rewritten on each revision
 <repo>/factory/jobs/<job-id>/build.md            one section per task, fix and ship run
+<repo>/factory/jobs/<job-id>/proof/ac<k>[-<slug>].<ext>   proof per acceptance criterion (builders write it)
 <repo>/factory/jobs/<job-id>/feedback-<k>.md     written by you, from /factory feedback
 <repo>/factory/jobs/<job-id>/round-<N>/review-{product,security,code,ux,ui}.md
 <repo>/factory/jobs/<job-id>/round-<N>/judge.md
@@ -301,16 +322,48 @@ Check `build.md`'s first line after each, exactly as in **Build**.
    the branch up to date with `origin/main` the way AGENTS.md says, resolves
    conflicts, re-runs the validation and records it in `build.md`. On
    `STATUS: BLOCKED`, go to **Needs human**.
-2. Write `pr.md`. When the job ships as a draft, start it with an `## Open`
-   section holding the judge's `## For the human` (or, when rounds ran out, its
-   `## Why` and `## Fixes`), so the human sees what is open first. Then: what
-   the feature does; the acceptance criteria from `spec.md` with how each was
-   checked (from `build.md` and the judge); the interview answers; the verdicts
-   per round; whether the shipper resolved conflicts; and any non-blocking
-   notes the reviewers left. Copy these from the job's files, don't invent
-   them. Follow any PR-description rules in AGENTS.md. End with the attribution
-   lines the session gives for PRs, if any.
-3. Push and open or update the PR, from `<repo>`:
+2. **Publish the proof.** A PR must show that the implementation works: every
+   acceptance criterion needs at least one file in `proof/` named `ac<k>…`, a
+   screenshot or recording for what a user sees, a command's real output for
+   the rest. List `proof/` and match it against the criteria in `spec.md`. If a
+   criterion has none, the PR ships as a draft and the missing criteria go
+   under `## Open`, whatever the judge said. Never open a ready PR without
+   proof for every criterion, and never make proof yourself.
+
+   Push the proof files to their own branch, which is never merged, from
+   `<repo>`, in one command:
+   ```bash
+   export GIT_INDEX_FILE="$PWD/factory/jobs/<job-id>/proof.index"; rm -f "$GIT_INDEX_FILE"
+   git --work-tree=factory/jobs/<job-id>/proof add -A . \
+     && sha=$(git commit-tree "$(git write-tree)" -m "proof: <job-id>") \
+     && git push --force origin "$sha:refs/heads/factory-proof/<job-id>" \
+     && echo "$sha"
+   ```
+   A proof file's URL is
+   `https://github.com/<owner>/<repo>/blob/<sha>/<file>?raw=true`, with
+   `<owner>/<repo>` from `gh repo view --json nameWithOwner -q .nameWithOwner`.
+   Skip the push when `proof/` is empty or missing.
+3. Write `pr.md`, in this order:
+   - `## Open`, only when the job ships as a draft: the judge's
+     `## For the human` (or, when rounds ran out, its `## Why` and `## Fixes`),
+     plus any criteria without proof, so the human sees what is open first.
+   - What the feature does.
+   - `## Proof`: each acceptance criterion from `spec.md`, in order, with its
+     proof right under it. Embed images and GIFs (`![AC<k>: <criterion>](<url>)`),
+     link videos, and put command output in a code block inside `<details>`,
+     trimmed to the lines that show the result. Add how it was checked, from
+     `build.md` and the judge.
+   - `## How it's built`: the judge's `## Design` from the last round, as it
+     is: the patterns followed, any new pattern, any deviation from the
+     blueprint, and any workaround. This is what the human reads instead of
+     every line of the diff.
+   - The interview answers; the verdicts per round; whether the shipper
+     resolved conflicts; and any non-blocking notes the reviewers left.
+
+   Copy these from the job's files, don't invent them. Follow any
+   PR-description rules in AGENTS.md. End with the attribution lines the
+   session gives for PRs, if any.
+4. Push and open or update the PR, from `<repo>`:
    ```bash
    git -C <worktree> push --force-with-lease -u origin factory/<job-id>
    # no PR yet:
@@ -323,8 +376,8 @@ Check `build.md`'s first line after each, exactly as in **Build**.
    The title follows the repo's commit convention from AGENTS.md. On a feedback
    cycle, also comment on the PR with one line per feedback item saying what
    changed, so reviewers see their comments were handled.
-4. Set `stage: "pr"` and `pr` to the PR URL. Leave the worktree and branch in
-   place. Never merge into `main` and never push `main`: the human reviews and
+5. Set `stage: "pr"` and `pr` to the PR URL. Leave the worktree and both
+   branches in place. Never merge into `main` and never push `main`: the human reviews and
    merges the PR. If the push or `gh` fails, go to **Needs human** with the
    exact error.
 
@@ -356,7 +409,7 @@ The job must be in `pr` or `needs-human`.
 
 The job must be in `needs-human`. The human has decided the branch is good as
 it is: go to **Ship** with a draft PR, starting `pr.md` with the reason the job
-needed a human.
+needed a human. The PR still carries whatever proof the job has.
 
 ## /factory dashboard
 

@@ -13,16 +13,17 @@ other file.
 
 Your prompt gives the job's worktree: a checkout of the job branch outside the
 main checkout you start in. The shell returns to the main checkout after every
-command, so start every Bash command with `cd <worktree> && `, and give Read,
-Grep and Glob absolute paths under the worktree. The job folder is in the main
+command, so start every Bash command with `cd <worktree> && `, and give read,
+grep and find absolute paths under the worktree. The job folder is in the main
 checkout; your one file goes there.
 
 ## Read
 
 1. `AGENTS.md` (or `CLAUDE.md`), plus any doc it says to read for the area the
    branch touches.
-2. `<job folder>/spec.md` and `<job folder>/build.md`.
-3. The change: `git log --oneline main..<branch>` and `git diff main...<branch>`.
+2. `<job folder>/spec.md`, `build.md`, `answers.md` (the human's decisions) and
+   any `feedback-*.md` (the human's PR review).
+3. The change: `git log --oneline origin/main..<branch>` and `git diff origin/main...<branch>`.
    Read the changed files in full where the diff isn't enough.
 4. From round 2 on, your own `round-<N-1>/review-security.md`. Check whether
    each finding was fixed.
