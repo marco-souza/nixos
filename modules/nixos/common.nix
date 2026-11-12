@@ -43,6 +43,7 @@
       lsof
       openssl
       python3
+      audacity
     ];
   };
 

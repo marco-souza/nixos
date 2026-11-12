@@ -13,6 +13,13 @@
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
+    # The laptop only sends bluetooth audio. With the A2DP sink role on,
+    # speakers that are also an audio source (JBL PartyBox) fail to connect.
+    wireplumber.extraConfig."51-bluez-roles"."monitor.bluez.properties"."bluez5.roles" = [
+      "a2dp_source"
+      "hfp_ag"
+      "hsp_ag"
+    ];
   };
 
   # Touchpad support (enabled by default in most desktopManagers).
