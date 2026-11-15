@@ -45,6 +45,7 @@
   environment.systemPackages = with pkgs; [
     brave
     ghostty
+    cosmic-wallpapers
     (callPackage ../../pkgs/orca-ide.nix { })
   ];
 }
