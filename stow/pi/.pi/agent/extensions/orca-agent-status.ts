@@ -152,6 +152,29 @@ function subagentPayload(byteBudget: number): Record<string, unknown> {
   return subagents.length > 0 ? { subagents } : {}
 }
 
+let nativeChatUi: { setStatus?: (key: string, text: string | undefined) => void } | null = null
+const nativeChatEndings = new Map<string, string>()
+let nativeChatRosterText = ''
+let nativeChatPublishQueued = false
+function captureNativeChatUi(ctx): void {
+  if (process.env.ORCA_STRUCTURED_SESSION && !isOmpRuntime()) nativeChatUi = ctx?.ui ?? null
+}
+function nativeChatRosterChanged(): void {
+  if (!nativeChatUi || nativeChatPublishQueued) return
+  nativeChatPublishQueued = true
+  void Promise.resolve().then(() => {
+    nativeChatPublishQueued = false
+    const ended = nativeChatEndings.size > 0 ? { ended: Object.fromEntries(nativeChatEndings) } : {}
+    nativeChatEndings.clear()
+    const text = JSON.stringify({ subagents: [], ...subagentPayload(Infinity), ...ended })
+    if (text === nativeChatRosterText) return
+    nativeChatRosterText = text
+    try {
+      nativeChatUi?.setStatus?.('orca-subagents', text)
+    } catch {}
+  })
+}
+
 let sessionMetadata: Record<string, unknown> = {}
 let runtimeOmpSessionMetadata: Record<string, unknown> = {}
 
@@ -542,6 +565,7 @@ export default function (pi): void {
     lifecycleState.exited?.clear()
     subagentDetails.clear()
     lifecycleState.waiting = false
+    nativeChatRosterChanged()
   }
   if (ownsPaneRoster && piEventBus?.on && !piEventBus.__orcaPiSubagentsHeard && !busRoster?.listener) {
     piEventBus.__orcaPiSubagentsHeard = true
@@ -657,6 +681,7 @@ export default function (pi): void {
   onStatus('session_start', (event, ctx) => {
     updateSessionMetadata(ctx)
     piUiPromptDepth = 0
+    captureNativeChatUi(ctx)
     // Reload replaces registration without ending the turn; preserve status and unread state.
     if (event.reason === 'reload') return
     post('session_start')
@@ -787,21 +812,26 @@ export default function (pi): void {
 
   // Why: set only from a finished reply until its settle post, so a later /compact names no old turn.
   let replyFinishedAt: number | undefined
+  let replyAborted = false
 
   function takeCompletedReplyFields(): Record<string, unknown> {
-    const fields = replyFinishedAt === undefined ? {} : { turn_completed_at: replyFinishedAt }
+    const fields = replyAborted
+      ? { interrupted: true }
+      : replyFinishedAt === undefined ? {} : { turn_completed_at: replyFinishedAt }
     replyFinishedAt = undefined
+    replyAborted = false
     return fields
   }
 
   // Why: a run cut off mid-tool, failed or aborted has no finished reply to announce.
   function recordReplyFinish(event): void {
-    let reply: { stopReason?: unknown } | undefined
+    let reply: { stopReason?: unknown; errorMessage?: unknown } | undefined
     for (const message of Array.isArray(event?.messages) ? event.messages : []) {
       if (message?.role === 'assistant') reply = message
     }
     const finished = reply?.stopReason === 'stop' || reply?.stopReason === 'length'
     replyFinishedAt = finished && !isOmpRuntime() ? Date.now() : undefined
+    replyAborted = reply?.stopReason === 'aborted' || (reply?.stopReason === 'error' && /aborted/i.test(String(reply?.errorMessage ?? '')))
   }
 
   onStatus('session_before_compact', (event, ctx) => {
@@ -849,21 +879,50 @@ export default function (pi): void {
     lifecycleState.active.delete(id)
     lifecycleState.exited?.delete(id)
     subagentDetails.delete(id)
+    nativeChatRosterChanged()
   }
   function postSubagentsUpdate(): void {
     if (!hasQueuedPost()) post('subagents_update')
   }
+  function forgetFinishedOmpSubagents(ctx): boolean {
+    const live = new Set<unknown>()
+    try {
+      const running = ctx?.getAsyncJobSnapshot?.()?.running
+      if (!Array.isArray(running)) return false
+      for (const job of running) {
+        if (job?.type !== 'task') continue
+        if (typeof job.agentId !== 'string') return false
+        live.add(job.agentId)
+      }
+      const registry = pi.pi?.AgentRegistry?.global?.()
+      if (typeof registry?.get !== 'function') return false
+      for (const id of lifecycleState.active) {
+        const session = registry.get(id)?.session
+        if (session?.isStreaming === true || session?.hasPendingAsyncWork?.() === true) live.add(id)
+      }
+    } catch {
+      return false
+    }
+    let wasVisible = false
+    for (const id of lifecycleState.active) {
+      if (live.has(id)) continue
+      wasVisible ||= isVisibleSubagent(lifecycleState, id)
+      forgetSubagent(id)
+    }
+    return wasVisible
+  }
   const readLabel = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined
   lifecycleState.onEvent = (event: unknown, forcedStatus?: string): void => {
     if (!event || typeof event !== 'object') return
-    const record = event as { id?: unknown; runId?: unknown; agent?: unknown; description?: unknown; workflowKey?: unknown; mode?: unknown; parentWorkflowRunId?: unknown }
+    const record = event as { id?: unknown; runId?: unknown; agent?: unknown; description?: unknown; workflowKey?: unknown; mode?: unknown; parentWorkflowRunId?: unknown; success?: unknown; state?: unknown }
     const id = typeof record.id === 'string' && record.id ? record.id : typeof record.runId === 'string' ? record.runId : ''
     const status = forcedStatus ?? (event as { status?: unknown }).status
     if (!id) return
     if (isOmpRuntime() && !lifecycleState.ownsPane) return
     if (status === 'started') {
       lifecycleState.active.add(id)
-      if (!subagentDetails.has(id)) subagentDetails.set(id, { agentType: readLabel(record.agent), description: readLabel(record.description) ?? readLabel(record.workflowKey), startedAt: Date.now(), workflow: record.mode === 'workflow', parent: readLabel(record.parentWorkflowRunId), registration })
+      if (!subagentDetails.has(id)) subagentDetails.set(id, { agentType: readLabel(record.agent), description: readLabel(record.description) ?? readLabel(record.workflowKey) ?? (isOmpRuntime() ? id : undefined), startedAt: Date.now(), workflow: record.mode === 'workflow', parent: readLabel(record.parentWorkflowRunId), registration })
+      nativeChatRosterChanged()
       if (!isTurnInFlight() && (isOmpRuntime() || lifecycleState.runGeneration === 0 || lifecycleState.completionPostedGeneration === lifecycleState.runGeneration)) {
         lifecycleState.waiting = true
         lifecycleState.completionPostedGeneration = -1
@@ -873,6 +932,7 @@ export default function (pi): void {
     }
     if (status !== 'completed' && status !== 'failed' && status !== 'aborted') return
     let wasVisible = isVisibleSubagent(lifecycleState, id)
+    if (nativeChatUi) nativeChatEndings.set(id, status !== 'completed' || record.success !== false ? status : record.state === 'stopped' || record.state === 'paused' ? 'aborted' : 'failed')
     forgetSubagent(id)
     for (const [childId, detail] of subagentDetails) {
       if (detail.parent !== id || detail.registration === registration) continue
@@ -891,6 +951,7 @@ export default function (pi): void {
     if (!lifecycleState.exited) lifecycleState.exited = new Set<string>()
     const wasVisible = isVisibleSubagent(lifecycleState, runId)
     lifecycleState.exited.add(runId)
+    nativeChatRosterChanged()
     if (wasVisible) postSubagentsUpdate()
     if (!lifecycleState.waiting) return
     clearRunnerExitCheck()
@@ -933,6 +994,7 @@ export default function (pi): void {
       lifecycleState.active.add(id)
       subagentDetails.set(id, detail)
     }
+    nativeChatRosterChanged()
     if (!isHeldByChildren()) return
     lifecycleState.waiting = true
     lifecycleState.completionPostedGeneration = -1
@@ -993,7 +1055,8 @@ export default function (pi): void {
     lifecycleState.endedRunGeneration = lifecycleState.runGeneration
     recordReplyFinish(event)
     if (isOmpRuntime()) {
-      postAgentEndOnce()
+      const prunedVisible = forgetFinishedOmpSubagents(ctx)
+      if (!postAgentEndOnce() && prunedVisible) postSubagentsUpdate()
       return
     }
     if (agentSettledSupported) return
