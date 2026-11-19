@@ -22,3 +22,6 @@
 # Claude-managed plugin state; only our own marketplace is tracked
 .claude/plugins/*
 !.claude/plugins/marco-plugins/
+.claude/telemetry/*
+.claude/feedback/*
+.claude/gh-pr*
