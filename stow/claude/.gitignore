@@ -25,3 +25,4 @@
 .claude/telemetry/*
 .claude/feedback/*
 .claude/gh-pr*
+.claude/skills/mycelium-*
