@@ -21,7 +21,7 @@ const log = (...a: unknown[]) => console.error("[chrome-relay]", ...a);
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void; timer: Timer };
 
-let ext: ServerWebSocket<unknown> | null = null;
+let ext: ServerWebSocket<WsData> | null = null;
 let extInfo: Record<string, unknown> = {};
 let relayError: string | null = null;
 let nextId = 1;
@@ -33,73 +33,184 @@ function originAllowed(origin: string | null): boolean {
   return origin === `chrome-extension://${PINNED_EXTENSION_ID}`;
 }
 
-try {
-  Bun.serve({
-    hostname: "127.0.0.1",
-    port: PORT,
-    fetch(req, server) {
-      const origin = req.headers.get("origin");
-      if (!originAllowed(origin)) return new Response("forbidden", { status: 403 });
-      if (server.upgrade(req)) return;
-      return new Response("chrome-relay: websocket only", { status: 426 });
-    },
-    websocket: {
-      idleTimeout: 60, // extension pings every 20s; frees the slot if a browser vanishes
-      open(ws) {
-        // First browser wins. Replacing would make two browsers with the
-        // extension kick each other out forever.
-        if (ext) {
-          ws.close(4001, "another browser is already connected");
-          return;
+// Multi-session design: the first server process to bind PORT is the "owner" and
+// holds the extension socket. Every later process finds the port busy and attaches
+// to the owner as a "client" over ws://127.0.0.1:PORT/client; the owner executes
+// its calls on the browser and replies on that client's own socket, so results
+// are routed per session. If the owner exits, a client promotes itself to owner.
+
+type Role = "owner" | "client" | "starting";
+let role: Role = "starting";
+let clientWs: WebSocket | null = null;
+const clientPending = new Map<number, Pending>();
+let nextClientId = 1;
+
+type WsData = { kind: "ext" | "client" };
+
+function startOwner(): boolean {
+  try {
+    Bun.serve<WsData>({
+      hostname: "127.0.0.1",
+      port: PORT,
+      fetch(req, server) {
+        const origin = req.headers.get("origin");
+        if (new URL(req.url).pathname === "/client") {
+          // Local relay processes are not browsers: they send no Origin header.
+          // Any web page does, so pages are still rejected.
+          if (origin) return new Response("forbidden", { status: 403 });
+          if (server.upgrade(req, { data: { kind: "client" } })) return;
+        } else {
+          if (!originAllowed(origin)) return new Response("forbidden", { status: 403 });
+          if (server.upgrade(req, { data: { kind: "ext" } })) return;
         }
-        ext = ws;
-        log("extension connected");
+        return new Response("chrome-relay: websocket only", { status: 426 });
       },
-      message(ws, raw) {
-        let msg: any;
-        try {
-          msg = JSON.parse(String(raw));
-        } catch {
-          return;
-        }
-        if (msg.type === "hello") {
-          extInfo = msg.info ?? {};
-          return;
-        }
-        if (msg.type === "ping") {
-          ws.send(JSON.stringify({ type: "pong" }));
-          return;
-        }
-        const p = pending.get(msg.id);
-        if (!p) return;
-        pending.delete(msg.id);
-        clearTimeout(p.timer);
-        if (msg.error) p.reject(new Error(msg.error));
-        else p.resolve(msg.result);
-      },
-      close(ws) {
-        if (ext === ws) {
-          ext = null;
-          log("extension disconnected");
-          for (const [id, p] of pending) {
-            clearTimeout(p.timer);
-            p.reject(new Error("browser extension disconnected"));
-            pending.delete(id);
+      websocket: {
+        idleTimeout: 60, // extension pings every 20s; frees the slot if a browser vanishes
+        open(ws) {
+          if (ws.data.kind === "client") return;
+          // First browser wins. Replacing would make two browsers with the
+          // extension kick each other out forever.
+          if (ext) {
+            ws.close(4001, "another browser is already connected");
+            return;
           }
-        }
+          ext = ws;
+          log("extension connected");
+        },
+        message(ws, raw) {
+          let msg: any;
+          try {
+            msg = JSON.parse(String(raw));
+          } catch {
+            return;
+          }
+          if (ws.data.kind === "client") {
+            // Request from another session: run it and answer on this socket only.
+            if (msg.type === "ping") return ws.send(JSON.stringify({ type: "pong" }));
+            const answer = (body: object) => {
+              try {
+                ws.send(JSON.stringify({ id: msg.id, ...body }));
+              } catch {}
+            };
+            const run =
+              msg.method === "__status"
+                ? Promise.resolve({ connected: !!ext, port: PORT, browser: ext ? extInfo : undefined })
+                : callBrowser(msg.method, msg.params ?? {});
+            run.then(
+              (result) => answer({ result: result ?? null }),
+              (e) => answer({ error: String(e?.message ?? e) }),
+            );
+            return;
+          }
+          if (msg.type === "hello") {
+            extInfo = msg.info ?? {};
+            return;
+          }
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+          const p = pending.get(msg.id);
+          if (!p) return;
+          pending.delete(msg.id);
+          clearTimeout(p.timer);
+          if (msg.error) p.reject(new Error(msg.error));
+          else p.resolve(msg.result);
+        },
+        close(ws) {
+          if (ws.data.kind === "ext" && ext === ws) {
+            ext = null;
+            log("extension disconnected");
+            for (const [id, p] of pending) {
+              clearTimeout(p.timer);
+              p.reject(new Error("browser extension disconnected"));
+              pending.delete(id);
+            }
+          }
+        },
       },
-    },
+    });
+  } catch (e: any) {
+    if (e?.code === "EADDRINUSE") return false;
+    relayError = `Failed to start relay: ${e?.message ?? e}`;
+    log(relayError);
+    role = "owner"; // nothing more to try; callBrowser reports relayError
+    return true;
+  }
+  role = "owner";
+  relayError = null;
+  log(`listening on ws://127.0.0.1:${PORT} (owner)`);
+  return true;
+}
+
+function failClientPending(reason: string) {
+  for (const [id, p] of clientPending) {
+    clearTimeout(p.timer);
+    p.reject(new Error(reason));
+    clientPending.delete(id);
+  }
+}
+
+function attachAsClient() {
+  const sock = new WebSocket(`ws://127.0.0.1:${PORT}/client`);
+  let opened = false;
+  sock.onopen = () => {
+    opened = true;
+    clientWs = sock;
+    role = "client";
+    relayError = null;
+    log(`attached to relay owner on port ${PORT} (client)`);
+  };
+  sock.onmessage = (ev) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(String(ev.data));
+    } catch {
+      return;
+    }
+    const p = clientPending.get(msg.id);
+    if (!p) return;
+    clientPending.delete(msg.id);
+    clearTimeout(p.timer);
+    if (msg.error) p.reject(new Error(msg.error));
+    else p.resolve(msg.result);
+  };
+  sock.onerror = () => {};
+  sock.onclose = () => {
+    if (clientWs === sock) clientWs = null;
+    failClientPending("relay owner disconnected");
+    if (!opened) {
+      relayError = `Port ${PORT} is in use by something that is not a chrome-relay owner (or an old chrome-relay without multi-session support; restart that session). Set CHROME_RELAY_PORT to use another port.`;
+      log(relayError);
+    }
+    // Owner went away (or never was usable): try to become the owner, else re-attach.
+    role = "starting";
+    setTimeout(connectOrOwn, 200 + Math.random() * 600);
+  };
+}
+
+function connectOrOwn() {
+  if (!startOwner()) attachAsClient();
+}
+connectOrOwn();
+
+function callOwner(method: string, params: Record<string, unknown>): Promise<any> {
+  if (!clientWs || clientWs.readyState !== WebSocket.OPEN)
+    return Promise.reject(new Error(relayError ?? "relay owner not reachable yet; retrying"));
+  const id = nextClientId++;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      clientPending.delete(id);
+      reject(new Error(`relay did not answer "${method}" within ${(CALL_TIMEOUT_MS + 5000) / 1000}s`));
+    }, CALL_TIMEOUT_MS + 5000);
+    clientPending.set(id, { resolve, reject, timer });
+    clientWs!.send(JSON.stringify({ id, method, params }));
   });
-  log(`listening on ws://127.0.0.1:${PORT}`);
-} catch (e: any) {
-  relayError =
-    e?.code === "EADDRINUSE"
-      ? `Port ${PORT} is already in use (probably another Claude Code session owns the relay). Close it or set CHROME_RELAY_PORT.`
-      : `Failed to start relay: ${e?.message ?? e}`;
-  log(relayError);
 }
 
 function callBrowser(method: string, params: Record<string, unknown> = {}): Promise<any> {
+  if (role === "client") return callOwner(method, params);
   if (relayError) return Promise.reject(new Error(relayError));
   if (!ext)
     return Promise.reject(
@@ -233,9 +344,18 @@ const tools: Tool[] = [
 
 async function runTool(name: string, args: any) {
   if (name === "browser_status") {
-    const status = relayError
-      ? { connected: false, error: relayError }
-      : { connected: !!ext, port: PORT, browser: ext ? extInfo : undefined };
+    let status: any;
+    if (role === "client") {
+      try {
+        status = { ...(await callOwner("__status", {})), role: "client" };
+      } catch (e: any) {
+        status = { connected: false, error: String(e?.message ?? e) };
+      }
+    } else {
+      status = relayError
+        ? { connected: false, error: relayError }
+        : { connected: !!ext, port: PORT, role, browser: ext ? extInfo : undefined };
+    }
     return [{ type: "text", text: JSON.stringify(status, null, 2) }];
   }
   if (!tools.some((t) => t.name === name)) throw new Error(`unknown tool: ${name}`);
