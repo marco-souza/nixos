@@ -1,6 +1,6 @@
 ---
 name: factory
-description: Run the development workflow of the software factory in the current repo. Use when the user types /factory <feature>, /factory feedback <job-id> [<note>], /factory ship <job-id>, or /factory dashboard. The session that runs it becomes the orchestrator of the discovery → interview → spec → build → review → judge loop, which ends in a pull request the human reviews; PR feedback loops back into discovery.
+description: Run the development workflow of the software factory in the current repo. Use when the user types /factory <feature>, /factory feedback <job-id> [<note>], /factory approve <job-id>, /factory ship <job-id>, /factory sync, or /factory dashboard. The session that runs it becomes the orchestrator of the discovery → interview → spec → build → review → judge loop, which ends in a pull request the human reviews; PR feedback loops back into discovery, and an approved PR waits in team review until teammates approve it and the human merges.
 ---
 
 # Factory: development workflow
@@ -8,7 +8,7 @@ description: Run the development workflow of the software factory in the current
 You are the orchestrator of one job: the one your session started, or the one
 the user handed you with `/factory feedback` or `/factory ship`. You run the
 loop below, spawn every agent, interview the human, and are the only writer of
-the job's `job.json`. You never write code, specs, reviews or verdicts
+the job's `job.json` (apart from `sync.py`, see **Team review**). You never write code, specs, reviews or verdicts
 yourself. Agents do the work and each writes one file. You move the job along.
 
 This is the development workflow, started by a human. Other workflows (bug
@@ -16,11 +16,14 @@ tickets, on-call alarms) will get their own skills.
 
 ## Autonomy
 
-The human takes part at two points, and only those:
+The human takes part at three points, and only those:
 
 1. **The interview**, right after discovery, when discovery found questions the
    code can't answer.
-2. **The PR**, at the end. Their review comes back through `/factory feedback`.
+2. **The PR**. Their review comes back through `/factory feedback` (changes
+   wanted) or `/factory approve` (good: send it to the team).
+3. **The merge**. After team review the job comes back to them. Merging is
+   theirs alone: it is coordinated across teams, and the factory never merges.
 
 Everything else is yours. Don't stop to ask anything outside the interview:
 re-run an agent that wrote no file, send a failed round back to the builders,
@@ -38,7 +41,9 @@ human: /factory <feature>
            ├─ BUILD    → specialist fixes → review N+1
            ├─ SPEC     → spec revision → build → review N+1
            └─ ESCALATE ──────────────────────────────→ ship → PR (draft)
-human reviews PR → /factory feedback <job-id> → discovery (next cycle) → … → PR updated
+human reviews PR ─┬─ /factory feedback <job-id> → discovery (next cycle) → … → PR updated
+                  └─ /factory approve <job-id>  → team review: wait for 2 teammate approvals
+                                                  → merge-ready: back to the human, who merges
 ```
 
 | Step      | Agent (`subagent_type`)       | Model  | Writes                              |
@@ -145,6 +150,7 @@ lands in a commit and never changes the repo's `.gitignore`.
 <repo>/factory/jobs/<job-id>/round-<N>/review-{product,security,code,ux,ui}.md
 <repo>/factory/jobs/<job-id>/round-<N>/judge.md
 <repo>/factory/jobs/<job-id>/pr.md               the PR body
+<repo>/factory/jobs/<job-id>/activity.log        one line per spawn/finish, appended by you (the dashboard's stdout section)
 <repo>/../<name>-factory/<job-id>/               the job's worktree, on factory/<job-id>
 ```
 
@@ -161,6 +167,9 @@ Before any command, from `<repo>`:
    `~/.claude/skills/factory/dashboard.html`, `mkdir -p factory/jobs` and copy
    it there. On the first setup, tell the user the dashboard command (see
    **/factory dashboard**).
+3. Run `python3 ~/.claude/skills/factory/sync.py` once, so jobs with an open PR
+   are up to date before you act on one (see **Team review**). If it fails,
+   say so in one line and go on.
 
 ### job.json
 
@@ -170,12 +179,15 @@ Before any command, from `<repo>`:
   "worktree": "/home/you/code/my-app-factory/003-rate-limiting",
   "stage": "review", "cycle": 1, "round": 2, "cycleStart": 1, "task": null,
   "reviews": { "product": "PASS", "security": "CHANGES", "code": "PASS", "ux": "PASS", "ui": "pending" },
-  "judge": "pending", "pr": null }
+  "judge": "pending", "pr": null, "approvals": null }
 ```
 
 - `stage` is one of `discovery`, `interview`, `spec`, `build`, `review`,
-  `judge`, `ship`, `pr`, `needs-human`. Worktree setup counts as `discovery`.
-  `pr` means the PR is open and waiting for the human.
+  `judge`, `ship`, `pr`, `team-review`, `merge-ready`, `needs-human`, `merged`.
+  Worktree setup counts as `discovery`. `pr` means the PR is open and waiting
+  for the human's own review. `team-review` means they approved it and it waits
+  for teammates. `merge-ready` means the teammates approved and it waits for
+  the human to merge.
 - `cycle` is 1 for the first run and goes up by one with each
   `/factory feedback`. `cycleStart` is the first round of the current cycle;
   the cycle's round limit is `cycleStart + MAX_ROUNDS - 1`.
@@ -187,7 +199,16 @@ Before any command, from `<repo>`:
   `ESCALATE`. Earlier rounds live in their `round-<N>/` folders, which the
   dashboard reads directly.
 - `pr` is the PR URL once it exists, otherwise `null`.
-- Rewrite the whole file on every change. `worktree` is always an absolute
+- `approvals` is `null` until `/factory approve`, then
+  `{ "need": 2, "by": [<logins that approved>], "changes": [<logins that asked for changes>] }`.
+  `sync.py` keeps `by` and `changes` current.
+- `merged` is the final stage. `sync.py` sets it once the PR has merged. The
+  dashboard reads a merged job's verdicts from the `round-<N>/` files, so an
+  old `job.json` with only `id`, `feature`, `branch`, `worktree`, `stage` and
+  `round` still shows.
+- Rewrite the whole file on every change, and read it again first: `sync.py`
+  may have changed `stage` or `approvals` since you last wrote it. Keep its
+  values unless you are the one changing them. `worktree` is always an absolute
   path. The dashboard depends on these exact keys and values: don't rename
   them.
 
@@ -391,7 +412,8 @@ quote the BLOCKED reason from `build.md` (or the error). They continue it with
 
 ## /factory feedback <job-id> [<note>]
 
-The job must be in `pr` or `needs-human`.
+The job must be in `pr`, `team-review`, `merge-ready` or `needs-human`:
+teammates' review comments come back the same way as the human's.
 
 1. Collect the feedback. If the job has a PR, fetch its reviews and comments
    with `gh pr view <pr> --comments` and
@@ -403,7 +425,9 @@ The job must be in `pr` or `needs-human`.
 2. Start the next cycle: `cycle` + 1, `cycleStart` = `round` + 1, reviews and
    `judge` back to `pending`.
 3. Go to **Discovery**, with ` Feedback: feedback-<k>.md.` in its prompt. The
-   loop runs as before and ends by updating the existing PR in **Ship**.
+   loop runs as before and ends by updating the existing PR in **Ship**, which
+   puts the job back in `pr`: the human reviews the new commits and approves
+   again before the team does.
 
 ## /factory ship <job-id>
 
@@ -411,20 +435,83 @@ The job must be in `needs-human`. The human has decided the branch is good as
 it is: go to **Ship** with a draft PR, starting `pr.md` with the reason the job
 needed a human. The PR still carries whatever proof the job has.
 
+## /factory approve <job-id>
+
+The job must be in `pr`. The human has reviewed the PR and is happy with it, so
+it goes to the team. (GitHub doesn't accept an approval from a PR's own author,
+so this command is the human's approval.)
+
+1. If the PR is still a draft, mark it ready with `gh pr ready <pr>`: the
+   human's approval is what the draft was waiting for.
+2. Set `stage: "team-review"` and
+   `approvals: { "need": 2, "by": [], "changes": [] }`.
+3. Run **/factory sync**: teammates may have approved already.
+4. Tell the user the job is in team review and how many approvals it has.
+   Don't request reviewers, comment on the PR or message anyone: who to ask is
+   the human's call.
+
+## Team review
+
+`TEAM_APPROVALS = 2`: a job in `team-review` waits until two teammates have
+approved its PR. A teammate is anyone but the PR's author who can approve for
+real (a member, owner or collaborator). Bots don't count. Of each person's
+reviews only the latest approval, change request or dismissal counts, so a
+later comment doesn't undo an approval.
+
+`sync.py` in this folder reads each open PR with `gh` and moves the job. It
+only touches jobs in `pr`, `team-review` or `merge-ready`, and only reads from
+GitHub:
+
+| From                         | When                                  | To            |
+| ---------------------------- | ------------------------------------- | ------------- |
+| `team-review`                | two teammates have approved           | `merge-ready` |
+| `team-review`, `merge-ready` | a teammate asks for changes           | `pr`          |
+| `merge-ready`                | an approval is withdrawn or dismissed | `team-review` |
+| any of the three             | the PR is merged                      | `merged`      |
+
+A job sent back to `pr` by a change request shows who asked. The human answers
+with `/factory feedback <job-id>`.
+
+`merge-ready` puts the job back in front of the human, and that is where the
+factory stops. **Never merge a PR**, never push to `main`, and don't offer to:
+merging is coordinated across teams and is the human's alone. Once they merge,
+the next sync marks the job `merged`.
+
+## /factory sync
+
+Run `python3 ~/.claude/skills/factory/sync.py` from `<repo>` and report each
+line it prints (one per job that changed; nothing means nothing moved). The
+dashboard command below runs the same script every minute, so this is only
+needed when that isn't running.
+
 ## /factory dashboard
 
 Run **Bootstrap**, then tell the user to run, from `<repo>`:
 
 ```bash
-cd factory && python3 -m http.server 8000
+python3 ~/.claude/skills/factory/sync.py --serve
 ```
 
-and open <http://localhost:8000/dashboard.html>. It polls every two seconds:
-jobs move across the stages as cards, review and judge chips fill in as
-verdicts land, and clicking a card shows its markdown files. Don't start the
+and open <http://localhost:8000/dashboard.html>. That serves the board on
+localhost only and syncs PR state every minute (`--serve <port>` for another
+port; `--watch` alone syncs without serving, beside a server that is already
+running). The page polls every two seconds.
+The board is built around the human: the first lane, "Needs you", is always
+open and holds every job in `interview`, `needs-human`, `pr` or `merge-ready`
+as a golden card, with how long it has waited and what it asks for. The other
+stages (Discovery, Spec, Build, Review, Team review, Merged) are colour pills
+with a job count
+that open into a lane on click. Review and judge chips fill in as verdicts
+land, a card's PR link opens the PR, clicking a card shows its markdown
+files, and state changes pop up as toasts. Don't start the
 server yourself unless asked.
 
 ## Reporting
+
+Also append one line to `factory/jobs/<job-id>/activity.log` each time you spawn
+or collect an agent: `HH:MM:SS spawn factory-builder-backend T2` and
+`HH:MM:SS done factory-builder-backend T2 READY`. The dashboard tails it under
+"stdout" for each worktree.
 
 Keep the user posted with one short line per transition, starting with the job
 id, for example
