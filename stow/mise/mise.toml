@@ -11,8 +11,16 @@ pi = "latest"
 claude-code = "latest"
 bun = "latest"
 deno = "latest"
-odin = "dev-2026-06"
+odin = "dev-2026-11a"
+gh = "latest"
+
+# repos
+"github:can1357/oh-my-pi" = "latest"
 
 # internals
 usage = "latest"
 watchexec = "latest"
+
+# settings
+[settings.node]
+compile = false
