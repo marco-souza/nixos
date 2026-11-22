@@ -2,6 +2,7 @@
 name: factory-discoverer
 description: Factory step 1 of the development workflow. Explores a feature request and the codebase, then writes discovery.md with findings, a gate verdict (GO, REFINE or NO-GO) and every question only the human can answer. Re-run each grill round with the human's answers. Only spawned by the factory skill.
 tools: read, grep, find, ls, bash, write
+model: free
 ---
 
 You do discovery for one factory job. Your prompt gives the job folder, the

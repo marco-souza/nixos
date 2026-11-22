@@ -157,30 +157,30 @@ worktree, branch, job folder and dev server ports, so they never collide.
 - Your session stays in the main checkout. Agents work in the job's worktree.
   The main checkout is the user's, and it may be dirty or on another branch.
   Nothing touches it.
-- Job state lives in `factory/jobs/<job-id>/` in the main checkout, never in a
+- Job state lives in `.factory/jobs/<job-id>/` in the main checkout, never in a
   worktree.
 
 ## Files
 
 `<repo>` is the main checkout (`git rev-parse --show-toplevel` from your
-session) and `<name>` is its folder name. The whole `factory/` folder is
+session) and `<name>` is its folder name. The whole `.factory/` folder is
 excluded locally through `.git/info/exclude`: it is runtime state that never
 lands in a commit and never changes the repo's `.gitignore`.
 
 ```
-<repo>/factory/dashboard.html                    the board (copied from this skill)
-<repo>/factory/jobs/<job-id>/job.json            the job's state (you write it, the dashboard reads it)
-<repo>/factory/jobs/<job-id>/discovery.md        rewritten each cycle
-<repo>/factory/jobs/<job-id>/answers.md          the grill, the confirmation and the prototype pick, appended each cycle
-<repo>/factory/jobs/<job-id>/prototypes/<k>/     throwaway options of try k: compare.md and one folder per option (never on the branch)
-<repo>/factory/jobs/<job-id>/spec.md             rewritten on each revision
-<repo>/factory/jobs/<job-id>/build.md            one section per task, fix and ship run
-<repo>/factory/jobs/<job-id>/proof/ac<k>[-<slug>].<ext>   proof per acceptance criterion (builders write it)
-<repo>/factory/jobs/<job-id>/feedback-<k>.md     written by you, from /factory feedback
-<repo>/factory/jobs/<job-id>/round-<N>/review-{product,security,code,ux,ui}.md
-<repo>/factory/jobs/<job-id>/round-<N>/judge.md
-<repo>/factory/jobs/<job-id>/pr.md               the PR body
-<repo>/../<name>-factory/<job-id>/               the job's worktree, on factory/<job-id>
+<repo>/.factory/dashboard.html                    the board (copied from this skill)
+<repo>/.factory/jobs/<job-id>/job.json            the job's state (you write it, the dashboard reads it)
+<repo>/.factory/jobs/<job-id>/discovery.md        rewritten each cycle
+<repo>/.factory/jobs/<job-id>/answers.md          the grill, the confirmation and the prototype pick, appended each cycle
+<repo>/.factory/jobs/<job-id>/prototypes/<k>/     throwaway options of try k: compare.md and one folder per option (never on the branch)
+<repo>/.factory/jobs/<job-id>/spec.md             rewritten on each revision
+<repo>/.factory/jobs/<job-id>/build.md            one section per task, fix and ship run
+<repo>/.factory/jobs/<job-id>/proof/ac<k>[-<slug>].<ext>   proof per acceptance criterion (builders write it)
+<repo>/.factory/jobs/<job-id>/feedback-<k>.md     written by you, from /factory feedback
+<repo>/.factory/jobs/<job-id>/round-<N>/review-{product,security,code,ux,ui}.md
+<repo>/.factory/jobs/<job-id>/round-<N>/judge.md
+<repo>/.factory/jobs/<job-id>/pr.md               the PR body
+<repo>/.factory/<job-id>/               the job's worktree, on factory/<job-id>
 ```
 
 Round numbers keep counting across cycles (a second cycle may start at
@@ -190,11 +190,17 @@ Round numbers keep counting across cycles (a second cycle may start at
 
 Before any command, from `<repo>`:
 
-1. If `/factory/` isn't a line in `.git/info/exclude` (use
+1. If `/.factory/` isn't a line in `.git/info/exclude` (use
    `git rev-parse --git-path info/exclude`), append it.
-2. If `factory/dashboard.html` is missing or differs from
-   `~/.pi/agent/skills/factory/dashboard.html`, `mkdir -p factory/jobs` and copy
-   it there. On the first setup, tell the user the dashboard command (see
+2. If `.factory/dashboard.html` is missing or differs from
+   `~/.pi/agent/skills/factory/dashboard.html`, `mkdir -p .factory/jobs` and copy
+   it there. Then inject the project name (the repo's folder name) into the
+   dashboard so the heading shows "Software Factory – <project>":
+   ```bash
+   PROJECT="$(basename "$(git rev-parse --show-toplevel)")"
+   sed -i "s|<span id=\"project-name\" class=\"project-name\">|<span id=\"project-name\" class=\"project-name\">$PROJECT|" .factory/dashboard.html
+   ```
+   On the first setup, tell the user the dashboard command (see
    **/factory dashboard**).
 
 ### job.json
@@ -202,7 +208,7 @@ Before any command, from `<repo>`:
 ```json
 { "id": "003-rate-limiting", "feature": "Rate limit the signup form",
   "branch": "factory/003-rate-limiting",
-  "worktree": "/home/you/code/my-app-factory/003-rate-limiting",
+  "worktree": "/home/you/code/my-app/.factory/003-rate-limiting",
   "stage": "review", "cycle": 1, "round": 2, "cycleStart": 1, "task": null,
   "reviews": { "product": "PASS", "security": "CHANGES", "code": "PASS", "ux": "PASS", "ui": "pending" },
   "judge": "pending", "pr": null }
@@ -234,7 +240,7 @@ Before any command, from `<repo>`:
 ### Prompts
 
 Every agent prompt starts with the job's absolute paths:
-`Job folder: <repo>/factory/jobs/<job-id>/. Worktree: <worktree>. Branch: factory/<job-id>.`
+`Job folder: <repo>/.factory/jobs/<job-id>/. Worktree: <worktree>. Branch: factory/<job-id>.`
 Below, `<paths>` stands for that sentence.
 
 Agents that open pages also get a port. With `n` the job number (`003` → 3),
@@ -245,11 +251,11 @@ every builder gets `5100 + 10n`, `factory-reviewer-ux` gets `5101 + 10n`,
 ## /factory <feature>
 
 1. **Create the job.** Pick the next 3-digit number after the highest numbered
-   folder in `factory/jobs/` (`001` if there are none) and a 2–4 word
+   folder in `.factory/jobs/` (`001` if there are none) and a 2–4 word
    kebab-case slug of the feature: `004-blog-reading-time`. Claim it with
-   `mkdir factory/jobs/<job-id>` (no `-p`). If that fails because another
+   `mkdir .factory/jobs/<job-id>` (no `-p`). If that fails because another
    session took the number, pick the next number and try again.
-   The worktree path is `$(cd .. && pwd)/$(basename "$PWD")-factory/<job-id>`,
+   The worktree path is `$(pwd)/.factory/<job-id>`,
    run from `<repo>`. Write `job.json` with that `worktree`,
    `stage: "discovery"`, `cycle: 1`, `round: 0`, `cycleStart: 1`,
    `task: null`, all reviews and `judge` `pending`, and `pr: null`.
@@ -398,7 +404,7 @@ After the last task, set `task: null` and start the next review round.
 ### Review round N
 
 1. Set `stage: "review"`, `round: N`, all five reviews and `judge` to
-   `pending`. Create `factory/jobs/<job-id>/round-<N>/`.
+   `pending`. Create `.factory/jobs/<job-id>/round-<N>/`.
 2. Spawn `factory-reviewer-product`, `factory-reviewer-security`,
    `factory-reviewer-code` and `factory-reviewer-ux` in one parallel
    `subagent` call. Each gets the prompt `<paths> Review round N.`, plus
@@ -462,8 +468,8 @@ Check `build.md`'s first line after each, exactly as in **Build**.
    Push the proof files to their own branch, which is never merged, from
    `<repo>`, in one command:
    ```bash
-   export GIT_INDEX_FILE="$PWD/factory/jobs/<job-id>/proof.index"; rm -f "$GIT_INDEX_FILE"
-   git --work-tree=factory/jobs/<job-id>/proof add -A . \
+   export GIT_INDEX_FILE="$PWD/.factory/jobs/<job-id>/proof.index"; rm -f "$GIT_INDEX_FILE"
+   git --work-tree=.factory/jobs/<job-id>/proof add -A . \
      && sha=$(git commit-tree "$(git write-tree)" -m "proof: <job-id>") \
      && git push --force origin "$sha:refs/heads/factory-proof/<job-id>" \
      && echo "$sha"
@@ -507,9 +513,9 @@ Check `build.md`'s first line after each, exactly as in **Build**.
    ```bash
    git -C <worktree> push --force-with-lease -u origin factory/<job-id>
    # no PR yet:
-   gh pr create --head factory/<job-id> --base main --title "<type>: <lowercase summary>" --body-file factory/jobs/<job-id>/pr.md [--draft]
+   gh pr create --head factory/<job-id> --base main --title "<type>: <lowercase summary>" --body-file .factory/jobs/<job-id>/pr.md [--draft]
    # PR exists (a feedback cycle):
-   gh pr edit <pr> --body-file factory/jobs/<job-id>/pr.md
+   gh pr edit <pr> --body-file .factory/jobs/<job-id>/pr.md
    gh pr ready <pr>            # only when APPROVE and the PR is a draft
    gh pr ready <pr> --undo     # only when it ships as a draft and the PR is ready
    ```
@@ -559,7 +565,7 @@ needed a human. The PR still carries whatever proof the job has.
 Run **Bootstrap**, then tell the user to run, from `<repo>`:
 
 ```bash
-cd factory && python3 -m http.server 8000
+cd .factory && python3 -m http.server 8000
 ```
 
 and open <http://localhost:8000/dashboard.html>. It polls every two seconds:

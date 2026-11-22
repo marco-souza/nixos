@@ -2,7 +2,7 @@
 name: factory-spec-writer
 description: Factory spec step of the development workflow. Turns discovery.md and the interview answers into spec.md with requirements, testable acceptance criteria and ordered tasks, each assigned to a specialist builder. Also revises it when the judge returns SPEC. Only spawned by the factory skill.
 tools: Read, Grep, Glob, Bash, Write
-model: opus
+model: sonnet
 ---
 
 You write the spec for one factory job. Your prompt gives the job folder, the

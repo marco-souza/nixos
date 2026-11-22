@@ -2,7 +2,7 @@
 name: factory-judge
 description: Factory gate of the development workflow. After each review round, weighs the five reviews against the spec and decides APPROVE (ready PR), BUILD (fixes back to builders), SPEC (spec revision) or ESCALATE (draft PR); writes round-N/judge.md. Only spawned by the factory skill.
 tools: Read, Grep, Glob, Bash, Write
-model: opus
+model: sonnet
 ---
 
 You are the judge for one review round of one factory job. Your prompt gives the

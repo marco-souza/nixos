@@ -16,7 +16,7 @@ or requests reviewers: merging is the human's.
   sync.py --watch [SEC]    a pass every SEC seconds (default 60)
   sync.py --serve [PORT]   serve the dashboard on localhost:PORT (default 8000) and watch
 
-Run it from the repo (it looks for ./factory/jobs, then ./jobs), or pass --dir.
+Run it from the repo (it looks for ./.factory/jobs, then ./jobs), or pass --dir.
 """
 import argparse
 import json
@@ -174,13 +174,13 @@ def main():
     ap = argparse.ArgumentParser(description="Keep factory jobs in step with their pull requests.")
     ap.add_argument("--watch", nargs="?", type=int, const=60, metavar="SEC", help="a pass every SEC seconds (default 60)")
     ap.add_argument("--serve", nargs="?", type=int, const=8000, metavar="PORT", help="also serve the dashboard on localhost:PORT (default 8000)")
-    ap.add_argument("--dir", metavar="FACTORY", help="the factory folder (default: ./factory, then .)")
+    ap.add_argument("--dir", metavar="FACTORY", help="the factory folder (default: ./.factory, then .)")
     args = ap.parse_args()
 
-    candidates = [Path(args.dir)] if args.dir else [Path.cwd() / "factory", Path.cwd()]
+    candidates = [Path(args.dir)] if args.dir else [Path.cwd() / ".factory", Path.cwd()]
     base = next((d for d in candidates if (d / "jobs").is_dir()), None)
     if base is None:
-        sys.exit("sync: no factory/jobs folder here. Run it from the repo, or pass --dir <repo>/factory.")
+        sys.exit("sync: no .factory/jobs folder here. Run it from the repo, or pass --dir <repo>/.factory.")
 
     if args.serve is not None:
         serve(base, args.serve)

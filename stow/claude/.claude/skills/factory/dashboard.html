@@ -483,7 +483,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="bars" id="bars" aria-hidden="true"></span>Software factory</h1>
+  <h1><span class="bars" id="bars" aria-hidden="true"></span>Software Factory <span id="project-name" class="project-name"></span></h1>
   <div class="status" id="status">connecting…</div>
 </header>
 <div id="banner"></div>
@@ -562,6 +562,32 @@ const $ = (id) => document.getElementById(id)
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
+
+// Project name injected by the factory skill bootstrap
+const PROJECT_NAME = (() => {
+  const el = document.getElementById('project-name')
+  if (el && el.textContent) return el.textContent
+  try { return localStorage.getItem('factory.projectName') || '' } catch { return '' }
+})()
+if (PROJECT_NAME) {
+  const el = document.getElementById('project-name')
+  if (el) el.textContent = `– ${PROJECT_NAME}`
+  try { localStorage.setItem('factory.projectName', PROJECT_NAME) } catch {}
+  document.title = `Software Factory – ${PROJECT_NAME}`
+}
+
+// Project name injected by the factory skill bootstrap
+const PROJECT_NAME = (() => {
+  const el = document.getElementById('project-name')
+  if (el && el.textContent) return el.textContent
+  try { return localStorage.getItem('factory.projectName') || '' } catch { return '' }
+})()
+if (PROJECT_NAME) {
+  const el = document.getElementById('project-name')
+  if (el) el.textContent = `– ${PROJECT_NAME}`
+  try { localStorage.setItem('factory.projectName', PROJECT_NAME) } catch {}
+  document.title = `Software Factory – ${PROJECT_NAME}`
+}
 const VISIBLE_ROUNDS = 3
 const allRounds = new Map() // job id -> { title, rows } for the see-all dialog
 let openRoundsId = null
