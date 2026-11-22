@@ -1,6 +1,6 @@
 ---
 name: factory
-description: Run the development workflow of the software factory in the current repo. Use when the user types /factory <feature>, /factory feedback <job-id> [<note>], /factory approve <job-id>, /factory ship <job-id>, /factory sync, or /factory dashboard. The session that runs it becomes the orchestrator of the discovery → interview → spec → build → review → judge loop, which ends in a pull request the human reviews; PR feedback loops back into discovery, and an approved PR waits in team review until teammates approve it and the human merges.
+description: Run the development workflow of the software factory in the current repo. Use when the user types /factory <feature>, /factory feedback <job-id> [<note>], /factory approve <job-id>, /factory ship <job-id>, /factory discard <job-id>, /factory sync, or /factory dashboard. The session that runs it becomes the orchestrator of the discovery grill → prototype → spec → build → review → judge loop, which ends in a pull request the human reviews; PR feedback loops back into discovery, and an approved PR waits in team review until teammates approve it and the human merges.
 ---
 
 # Factory: development workflow
@@ -16,25 +16,33 @@ tickets, on-call alarms) will get their own skills.
 
 ## Autonomy
 
-The human takes part at three points, and only those:
+The human takes part at four points, and only those:
 
-1. **The interview**, right after discovery, when discovery found questions the
-   code can't answer.
-2. **The PR**. Their review comes back through `/factory feedback` (changes
+1. **The grill**: the discovery interview, where they say what they want and
+   why, and the confirmation of a one-paragraph summary before anything is
+   built.
+2. **The prototype pick**: they choose between 2 or 3 throwaway options before
+   the spec is written (skipped when there is no real design choice).
+3. **The PR**. Their review comes back through `/factory feedback` (changes
    wanted) or `/factory approve` (good: send it to the team).
-3. **The merge**. After team review the job comes back to them. Merging is
+4. **The merge**. After team review the job comes back to them. Merging is
    theirs alone: it is coordinated across teams, and the factory never merges.
 
-Everything else is yours. Don't stop to ask anything outside the interview:
-re-run an agent that wrote no file, send a failed round back to the builders,
-and end a job that ran out of rounds in a draft PR. Report progress in short
-lines.
+Everything else is yours. Don't stop to ask anything outside the grill and the
+pick: re-run an agent that wrote no file, send a failed round back to the
+builders, and end a job that ran out of rounds in a draft PR. Questions the
+human didn't answer before the build travel with the PR (see **Ship**). Report
+progress in short lines.
 
 ## The loop
 
 ```
 human: /factory <feature>
-  → discovery ─→ interview (only if open questions) ─→ spec
+  → discovery ⇄ interview (grill: repeat until GATE: GO, max 3 rounds)
+      GATE: NO-GO ─→ human stops the job or overrules it
+      GATE: GO ─→ human confirms the summary
+  → prototype ─→ pick (2-3 options, human chooses; max 2 tries; skipped if no design choice)
+  → spec
   → build: one specialist builder per task, in order
   → review round N: [product, security, code, ux → ui] ─→ WAIT FOR ALL
   → judge ─┬─ APPROVE  ──────────────────────────────→ ship → PR (ready)
@@ -48,8 +56,10 @@ human reviews PR ─┬─ /factory feedback <job-id> → discovery (next cycle)
 
 | Step      | Agent (`subagent_type`)       | Model  | Writes                              |
 | --------- | ----------------------------- | ------ | ----------------------------------- |
-| discovery | `factory-discoverer`          | opus   | `discovery.md`                      |
+| discovery | `factory-discoverer`          | opus   | `discovery.md` (gate, summary, questions) |
 | interview | you (`AskUserQuestion`)       |        | `answers.md`                        |
+| prototype | `factory-prototyper`          | opus   | `prototypes/<k>/compare.md` + options |
+| pick      | you (`AskUserQuestion`)       |        | `answers.md`                        |
 | spec      | `factory-spec-writer`         | opus   | `spec.md` (requirements + tasks)    |
 | build     | `factory-builder-<specialist>`| sonnet | commits, `build.md` section, `proof/` |
 | review    | `factory-reviewer-product`    | opus   | `round-N/review-product.md`         |
@@ -81,6 +91,10 @@ their specialty's rules on top. An unknown specialist runs `factory-builder`.
 `MAX_ROUNDS = 3`: a cycle (the first run, or one `/factory feedback`) gets at
 most 3 review rounds. A BUILD or SPEC verdict in a cycle's third round ships as
 a draft PR instead.
+
+`MAX_GRILL_ROUNDS = 3`: a cycle's discovery asks at most 3 rounds of questions.
+`MAX_PROTOTYPE_TRIES = 2`: the human can turn down the options once; the second
+set is the last.
 
 To change the factory, edit this folder and the `factory-*` agents in
 `~/.claude/agents/` (stowed from the nixos repo, `stow/claude/.claude/`).
@@ -115,13 +129,14 @@ differently. Go on with the job.
 
 Pages are checked with the Playwright MCP tools (`mcp__plugin_playwright_*`).
 All of the session's subagents share that one browser, so only one browser
-agent runs at a time: builders run one after another anyway, and
-`factory-reviewer-ui` starts only after `factory-reviewer-ux` has finished. The
-other agents don't use the browser.
+agent runs at a time: the prototyper and the builders run one after another
+anyway, and `factory-reviewer-ui` starts only after `factory-reviewer-ux` has
+finished. The other agents don't use the browser.
 
 ## Parallel jobs
 
-One session drives one job, because the interview needs the human's attention.
+One session drives one job, because the grill and the prototype pick need the
+human's attention.
 Run several jobs at once from several sessions: each job has its own number,
 worktree, branch, job folder and dev server ports, so they never collide.
 
@@ -142,7 +157,8 @@ lands in a commit and never changes the repo's `.gitignore`.
 <repo>/factory/dashboard.html                    the board (copied from this skill)
 <repo>/factory/jobs/<job-id>/job.json            the job's state (you write it, the dashboard reads it)
 <repo>/factory/jobs/<job-id>/discovery.md        rewritten each cycle
-<repo>/factory/jobs/<job-id>/answers.md          the interview, appended each cycle
+<repo>/factory/jobs/<job-id>/answers.md          the grill, the confirmation and the prototype pick, appended each cycle
+<repo>/factory/jobs/<job-id>/prototypes/<k>/     throwaway options of try k: compare.md and one folder per option (never on the branch)
 <repo>/factory/jobs/<job-id>/spec.md             rewritten on each revision
 <repo>/factory/jobs/<job-id>/build.md            one section per task, fix and ship run
 <repo>/factory/jobs/<job-id>/proof/ac<k>[-<slug>].<ext>   proof per acceptance criterion (builders write it)
@@ -182,9 +198,13 @@ Before any command, from `<repo>`:
   "judge": "pending", "pr": null, "approvals": null }
 ```
 
-- `stage` is one of `discovery`, `interview`, `spec`, `build`, `review`,
-  `judge`, `ship`, `pr`, `team-review`, `merge-ready`, `needs-human`, `merged`.
-  Worktree setup counts as `discovery`. `pr` means the PR is open and waiting
+- `stage` is one of `discovery`, `interview`, `prototype`, `pick`, `spec`,
+  `build`, `review`, `judge`, `ship`, `pr`, `team-review`, `merge-ready`,
+  `needs-human`, `merged`, `discarded`.
+  Worktree setup counts as `discovery`. `interview` means the job waits for the
+  human's answers, their confirmation of the summary, or a decision on a NO-GO;
+  `prototype` means the prototyper is working, and `pick` means the options wait
+  for the human's choice. `pr` means the PR is open and waiting
   for the human's own review. `team-review` means they approved it and it waits
   for teammates. `merge-ready` means the teammates approved and it waits for
   the human to merge.
@@ -206,6 +226,8 @@ Before any command, from `<repo>`:
   dashboard reads a merged job's verdicts from the `round-<N>/` files, so an
   old `job.json` with only `id`, `feature`, `branch`, `worktree`, `stage` and
   `round` still shows.
+- `discarded` is the other final stage: the human dropped the job (see
+  **/factory discard**). Nothing reads or moves it again.
 - Rewrite the whole file on every change, and read it again first: `sync.py`
   may have changed `stage` or `approvals` since you last wrote it. Keep its
   values unless you are the one changing them. `worktree` is always an absolute
@@ -219,8 +241,9 @@ Every agent prompt starts with the job's absolute paths:
 Below, `<paths>` stands for that sentence.
 
 Agents that open pages also get a port. With `n` the job number (`003` → 3),
-every builder gets `5100 + 10n`, `factory-reviewer-ux` gets `5101 + 10n` and
-`factory-reviewer-ui` gets `5102 + 10n`, appended as ` Port: <port>.`
+every builder gets `5100 + 10n`, `factory-reviewer-ux` gets `5101 + 10n`,
+`factory-reviewer-ui` gets `5102 + 10n` and `factory-prototyper` gets
+`5103 + 10n`, appended as ` Port: <port>.`
 
 ## /factory <feature>
 
@@ -246,32 +269,119 @@ every builder gets `5100 + 10n`, `factory-reviewer-ux` gets `5101 + 10n` and
 ### Discovery
 
 Set `stage: "discovery"`. Spawn `factory-discoverer` with the prompt
-`<paths> Cycle <c>. Request: <feature, verbatim>.` On later cycles, add
-` Feedback: feedback-<k>.md.` Wait for it, then check that `discovery.md`
-exists and go to **Interview**.
+`<paths> Cycle <c>. Round <r>. Request: <feature, verbatim>.` (`r` is 1 on a
+cycle's first pass and goes up with each grill round.) On later cycles, add
+` Feedback: feedback-<k>.md.` Wait for it, run the **Handoff checks** on
+`discovery.md`, then read its first line, `GATE: <X>`:
+
+- `GATE: REFINE`: go to **Interview**.
+- `GATE: GO`: go to **Confirm**.
+- `GATE: NO-GO`: go to **NO-GO**.
 
 ### Interview
 
-Read the `## Open questions` section of `discovery.md`.
+The grill. Read the `## Open questions` section of `discovery.md` and set
+`stage: "interview"`. The repo answers how; only the human answers what and why,
+so ask all of it:
 
-- If it says "None.", skip straight to **Spec**.
-- Otherwise set `stage: "interview"` and ask the human every open question with
-  `AskUserQuestion`, up to 4 per call. Use the discoverer's wording and options
-  as they are, put its recommended option first and mark it `(Recommended)`,
-  and say in each question why it matters (the discoverer gives the reason).
-  Don't add questions of your own.
+- Ask every question, in the order written (it is dependency order), up to 4
+  per `AskUserQuestion` call, and skip a question whose `Only if:` doesn't hold
+  after the earlier answers. Use the discoverer's wording and options as they
+  are, put its recommended option first and mark it `(Recommended)`, and say in
+  each question why it matters (the discoverer gives the reason). Don't add
+  questions of your own.
 - Append the questions and the human's answers, verbatim, to `answers.md` under
-  `## Cycle <c>`. Then go to **Spec**.
+  `## Cycle <c>` → `### Round <r>`.
+- Then run **Discovery** again with `r` + 1, so the discoverer builds on the
+  answers. Stop at `MAX_GRILL_ROUNDS`: add ` Last round: ask only what blocks
+  the build and settle the rest as GO.` to the prompt of round 3. If the human
+  says they've heard enough ("enough", "just build it"), record that in
+  `answers.md` and run it once more with ` The human ended the grill: settle
+  what is left as GO.`
 
-This is the one place you wait for the human. Every question asked here is one
-the code couldn't answer and whose answer changes the plan.
+This is where you wait for the human. Every question asked here changes what
+gets built and has no answer in the repo.
+
+### Confirm
+
+`GATE: GO`. Set `stage: "interview"`. Read `## Summary`, `## Remaining
+assumptions` and `## Prototype` from `discovery.md`, and ask one question with
+`AskUserQuestion`: the summary verbatim, any remaining assumptions, and whether
+the human will see prototype options before the spec (`Needed: yes`, or no) and
+why. Options:
+
+1. `Confirm (Recommended)`
+2. `Confirm, but <show prototype options | skip prototypes>` (the opposite of
+   the discoverer's call)
+3. `Change something`: the human says what is wrong or missing in their own
+   words
+4. `Stop this job`
+
+- Confirm: append `### Confirmed` with the summary, verbatim, and the
+  prototype decision to `answers.md`, then go to **Prototype** (when
+  `Needed: yes`, or the human asked for it) or **Spec**.
+- Change: append their words to `answers.md` as the round's answer and run
+  **Discovery** again with `r` + 1. A correction doesn't count toward
+  `MAX_GRILL_ROUNDS`.
+- Stop: follow **/factory discard**.
+
+### NO-GO
+
+`GATE: NO-GO`. Set `stage: "interview"`. Tell the human, in the discoverer's
+words, why it shouldn't be built as asked and what it suggests instead, and ask:
+
+1. `Stop this job (Recommended)`
+2. `Build it anyway`: append the decision to `answers.md`, then run **Discovery**
+   again with ` The human overruled NO-GO: <their reason>.`
+3. `Change the request`: their new wording goes to `answers.md` as the round's
+   answer, then run **Discovery** again.
+
+Stop follows **/factory discard**.
+
+### Prototype
+
+Run it when `discovery.md` says `Needed: yes` or the human asked for it; if not,
+go straight to **Spec**. `k` is the try, 1 first.
+
+1. Set `stage: "prototype"`. Spawn `factory-prototyper` with
+   `<paths> Iteration <k>. Port: <port>.`, plus ` Note: <the human's words>.`
+   on a retry. Run the **Handoff checks** on `prototypes/<k>/compare.md`.
+2. Set `stage: "pick"`. Tell the human where to look: for each option, the
+   absolute path of its folder, and of `index.html` when it has one (they can
+   open it in a browser) or of `sketch.md`.
+3. Ask one question with `AskUserQuestion`: the design question as the question
+   text, and one option per prototype option from `compare.md`, named
+   `<letter>. <name>`, with its `Feels like` and `Trade-offs` as the
+   description and its `Preview` block as the `preview`. Put the recommended
+   option first and mark it `(Recommended)`. While `k` < `MAX_PROTOTYPE_TRIES`,
+   add `None of these, try again` as the last option, and the human's own words
+   (the Other text) are the note. A pick with a note of its own ("A, but with
+   B's filter") counts as a pick, with the note.
+4. Pick: append `### Prototype pick` to `answers.md`: the option's letter and
+   name, its folder (`prototypes/<k>/<folder>/`), the note verbatim, and the
+   names of the rejected options. Go to **Spec**.
+   None: append the note to `answers.md` as `### Prototype <k>: none picked`
+   and run step 1 again with `k` + 1. After the last try the human must pick:
+   the question has no `None` option, and anything they type is the note.
 
 ### Spec
 
 Set `stage: "spec"`. Spawn `factory-spec-writer` with the prompt
 `<paths> Cycle <c>. Write the spec.` When the judge sent the job back with
 SPEC, use `<paths> Revise the spec: read round-<N>/judge.md.` instead.
-Wait for it, then check that `spec.md` exists and go to **Build**.
+Wait for it, run the **Handoff checks** on `spec.md`, and go to **Build**.
+
+### Handoff checks
+
+An agent's file is its handoff: check it before you move on. If a check fails,
+run the agent once more with the same prompt; if it fails again, go to
+**Needs human** with what is missing.
+
+| File                       | Must have                                                                 |
+| -------------------------- | ------------------------------------------------------------------------- |
+| `discovery.md`             | first line `GATE: GO`, `GATE: REFINE` or `GATE: NO-GO`; `## Intent`, `## Prototype`; `## Summary` when GO; at least one question when REFINE |
+| `prototypes/<k>/compare.md` | `## Design question`, 2 or 3 `### ` options each with a `Preview`, `## Recommendation`; every option's folder exists |
+| `spec.md`                  | `## Acceptance criteria`, `## Tasks`, and `## Run` as its last section    |
 
 ### Build
 
@@ -364,11 +474,22 @@ Check `build.md`'s first line after each, exactly as in **Build**.
    `https://github.com/<owner>/<repo>/blob/<sha>/<file>?raw=true`, with
    `<owner>/<repo>` from `gh repo view --json nameWithOwner -q .nameWithOwner`.
    Skip the push when `proof/` is empty or missing.
+
+   When the human picked a prototype with screenshots, first copy the chosen
+   option's screenshots into `proof/` as `prototype-<letter>-<n>.png`, so the PR
+   can show them next to the result. The judge's check of `ac<k>…` files is not
+   affected.
 3. Write `pr.md`, in this order:
-   - `## Open`, only when the job ships as a draft: the judge's
-     `## For the human` (or, when rounds ran out, its `## Why` and `## Fixes`),
-     plus any criteria without proof, so the human sees what is open first.
+   - `## Open`, only when the job ships as a draft: the judge's `## Needs input`
+     (each question with its options and recommendation: the human answers with
+     `/factory feedback`) and `## For the human` (or, when rounds ran out, its
+     `## Why` and `## Fixes`), the spec's `[behaviour]` assumptions, plus any
+     criteria without proof, so the human sees what is open first.
    - What the feature does.
+   - `## Prototype`, only when the human picked one: the chosen option and why
+     they chose it, then a two-column table with the option's screenshot or
+     sketch on the left and the matching proof of the build on the right, one
+     row per screen or example. Add one line for each rejected option.
    - `## Proof`: each acceptance criterion from `spec.md`, in order, with its
      proof right under it. Embed images and GIFs (`![AC<k>: <criterion>](<url>)`),
      link videos, and put command output in a code block inside `<details>`,
@@ -378,7 +499,7 @@ Check `build.md`'s first line after each, exactly as in **Build**.
      is: the patterns followed, any new pattern, any deviation from the
      blueprint, and any workaround. This is what the human reads instead of
      every line of the diff.
-   - The interview answers; the verdicts per round; whether the shipper
+   - The grill answers; the verdicts per round; whether the shipper
      resolved conflicts; and any non-blocking notes the reviewers left.
 
    Copy these from the job's files, don't invent them. Follow any
@@ -404,7 +525,8 @@ Check `build.md`'s first line after each, exactly as in **Build**.
 
 ### Needs human
 
-A `STATUS: BLOCKED` build or ship, an agent with no valid output after a re-run,
+A `STATUS: BLOCKED` build or ship, an agent whose file fails its handoff check
+after a re-run, an agent with no valid output after a re-run,
 or a failed push or PR ends here. Set `stage: "needs-human"`. The branch and its
 worktree stay. Tell the user which job is waiting, give the worktree path, and
 quote the BLOCKED reason from `build.md` (or the error). They continue it with
@@ -424,8 +546,10 @@ teammates' review comments come back the same way as the human's.
    If there is neither a new comment nor a note, say so and stop.
 2. Start the next cycle: `cycle` + 1, `cycleStart` = `round` + 1, reviews and
    `judge` back to `pending`.
-3. Go to **Discovery**, with ` Feedback: feedback-<k>.md.` in its prompt. The
-   loop runs as before and ends by updating the existing PR in **Ship**, which
+3. Go to **Discovery** at round 1 of the new cycle, with
+   ` Feedback: feedback-<k>.md.` in its prompt. The grill asks only what the
+   feedback leaves open, and a prototype try runs only if the feedback asks for
+   a different design. The loop runs as before and ends by updating the existing PR in **Ship**, which
    puts the job back in `pr`: the human reviews the new commits and approves
    again before the team does.
 
@@ -434,6 +558,18 @@ teammates' review comments come back the same way as the human's.
 The job must be in `needs-human`. The human has decided the branch is good as
 it is: go to **Ship** with a draft PR, starting `pr.md` with the reason the job
 needed a human. The PR still carries whatever proof the job has.
+
+## /factory discard <job-id>
+
+Any stage but `merged`. The human dropped the job, also when they say so in
+other words ("cancel it", "shut it down"), even through another command.
+
+1. If an agent of this job is running in your session, stop it.
+2. Set `stage: "discarded"` and `task: null`, keeping every other value, and
+   append `HH:MM:SS discarded by the human` to `activity.log`.
+3. Leave the job folder, worktree and branches in place, and don't touch the
+   PR. Tell the user what is still around (an open PR, the worktree, the local
+   and remote branches) and offer to close or delete each: that is their call.
 
 ## /factory approve <job-id>
 
@@ -497,9 +633,10 @@ localhost only and syncs PR state every minute (`--serve <port>` for another
 port; `--watch` alone syncs without serving, beside a server that is already
 running). The page polls every two seconds.
 The board is built around the human: the first lane, "Needs you", is always
-open and holds every job in `interview`, `needs-human`, `pr` or `merge-ready`
-as a golden card, with how long it has waited and what it asks for. The other
-stages (Discovery, Spec, Build, Review, Team review, Merged) are colour pills
+open and holds every job in `interview`, `pick`, `needs-human`, `pr` or
+`merge-ready` as a golden card, with how long it has waited and what it asks
+for. The other stages (Discovery, Prototype, Spec, Build, Review, Team review,
+Merged) are colour pills
 with a job count
 that open into a lane on click. Review and judge chips fill in as verdicts
 land, a card's PR link opens the PR, clicking a card shows its markdown

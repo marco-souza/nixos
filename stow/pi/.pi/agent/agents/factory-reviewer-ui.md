@@ -21,7 +21,9 @@ checkout; your one file goes there.
 1. `AGENTS.md` (or `CLAUDE.md`), plus any doc it says to read for the area the
    branch touches.
 2. `<job folder>/spec.md`, `build.md`, `answers.md` (the human's decisions) and
-   any `feedback-*.md` (the human's PR review).
+   any `feedback-*.md` (the human's PR review). When `answers.md` records a
+   prototype pick, also its screenshots under `<job folder>/prototypes/<k>/`:
+   open them with read and keep them beside your own.
 3. The change: `git log --oneline origin/main..<branch>` and `git diff origin/main...<branch>`.
 4. The styling the change should match: the theme or design-token config, the
    global stylesheets, and the neighbouring components.
@@ -50,6 +52,10 @@ Without the browser tools, review from the code alone and say so under Notes.
 - Alignment, spacing rhythm and hierarchy hold up, and nothing overflows at
   phone width.
 - Text contrast is readable, in every theme the app has.
+- When the human picked a prototype: the layout, hierarchy and states match the
+  chosen option's screenshots. The prototype is a sketch, so its exact colours,
+  fonts and spacing don't bind: the app's own styling wins. A different layout,
+  missing state or lost hierarchy is a finding.
 
 If the branch has no visual change, write PASS and say so.
 

@@ -32,6 +32,7 @@
     --gold-soft: oklch(96.5% 0.034 100);
     --gold-mid: oklch(92% 0.076 90);
     --c-discovery: oklch(66% 0.206 285.52);
+    --c-prototype: oklch(70% 0.17 55);
     --c-spec: oklch(71.8% 0.2008 342);
     --c-build: oklch(66% 0.152 208);
     --c-review: oklch(68% 0.176 113.11);
@@ -120,8 +121,8 @@
   .lanes {
     display: flex; gap: 14px; align-items: stretch; width: max-content; min-height: 100%; margin: 0 auto;
   }
-  .c-discovery { --c: var(--c-discovery); } .c-spec { --c: var(--c-spec); } .c-build { --c: var(--c-build); }
-  .c-review { --c: var(--c-review); } .c-team { --c: var(--c-team); } .c-merged { --c: var(--c-merged); }
+  .c-discovery { --c: var(--c-discovery); } .c-prototype { --c: var(--c-prototype); } .c-spec { --c: var(--c-spec); } .c-build { --c: var(--c-build); }
+  .c-review { --c: var(--c-review); } .c-team { --c: var(--c-team); } .c-merged, .c-discarded { --c: var(--c-merged); }
 
   /* A collapsed lane: a pill as long as its job count, then a thread down the board */
   .pillcol { flex: none; width: 38px; display: flex; flex-direction: column; align-items: center; }
@@ -531,25 +532,29 @@ const TEAM_APPROVALS = 2 // teammate approvals a PR needs before it comes back t
 // Lanes group the job.json stages. "you" is the human's lane: first and always open.
 // To give PRs their own lane again, move 'pr' out of it into a new entry.
 const LANES = [
-  { key: 'you', stages: ['needs-human', 'interview', 'merge-ready', 'pr'], label: 'Needs you' },
+  { key: 'you', stages: ['needs-human', 'interview', 'pick', 'merge-ready', 'pr'], label: 'Needs you' },
   { key: 'discovery', stages: ['discovery'], label: 'Discovery' },
+  { key: 'prototype', stages: ['prototype'], label: 'Prototype' },
   { key: 'spec', stages: ['spec'], label: 'Spec' },
   { key: 'build', stages: ['build', 'ship'], label: 'Build' },
   { key: 'review', stages: ['review', 'judge'], label: 'Review' },
   { key: 'team', stages: ['team-review'], label: 'Team review' },
   { key: 'merged', stages: ['merged'], label: 'Merged' },
+  { key: 'discarded', stages: ['discarded'], label: 'Discarded' },
 ]
 const COLUMN = Object.fromEntries(LANES.flatMap((c) => c.stages.map((s) => [s, c.key])))
 // What each human stage asks of you, most urgent first.
 const ASKS = {
   'needs-human': { stamp: 'Blocked', cls: 'stop', tally: (n) => `${n} blocked` },
   interview: { stamp: 'Answer', cls: 'ask', tally: (n) => `${n} interview${n > 1 ? 's' : ''}` },
+  pick: { stamp: 'Pick', cls: 'ask', tally: (n) => `${n} option${n > 1 ? 's' : ''} to pick` },
   'merge-ready': { stamp: 'Merge', cls: 'review', tally: (n) => `${n} to merge` },
   pr: { stamp: 'Review PR', cls: 'ask', tally: (n) => `${n} PR${n > 1 ? 's' : ''} to review` },
 }
 const ASK_ORDER = Object.keys(ASKS)
 const names = (a) => a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || ''
-const LIVE = new Set(['discovery', 'spec', 'build', 'review', 'judge', 'ship'])
+const LIVE = new Set(['discovery', 'prototype', 'spec', 'build', 'review', 'judge', 'ship'])
+const DONE = new Set(['merged', 'discarded']) // final stages: nothing runs and nothing waits
 const REVIEWERS = [['product', 'prod'], ['security', 'sec'], ['code', 'code'], ['ux', 'ux'], ['ui', 'ui']]
 const JUDGE = ['APPROVE', 'BUILD', 'SPEC', 'ESCALATE']
 
@@ -598,7 +603,7 @@ function verdictOf(text) {
 // Earlier rounds aren't on the board; their verdicts come from the review files.
 async function pastRounds(job) {
   const rounds = []
-  const upto = job.stage === 'merged' ? job.round + 1 : job.round
+  const upto = DONE.has(job.stage) ? job.round + 1 : job.round
   for (let n = 1; n < upto; n++) {
     const key = `${job.id}/${n}`
     const partial = roundPartial.get(key)
@@ -671,14 +676,14 @@ function card(job, past) {
   const inTeam = job.stage === 'team-review'
   // A teammate asked for changes: the PR is back with you, for a different reason.
   const ask = job.stage === 'pr' && asked.length ? { stamp: 'Changes asked', cls: 'stop' } : ASKS[job.stage]
-  if (job.stage === 'merged' && past.length) {
+  if (DONE.has(job.stage) && past.length) {
     const last = past[past.length - 1]
     const known = (v) => v && v !== 'missing' && v !== 'invalid'
     past = [...past.slice(0, -1), Object.fromEntries([...REVIEWERS.map(([k]) => k), 'judge'].map((k) =>
       [k, known(last[k]) ? last[k] : (k === 'judge' ? job.judge : job.reviews?.[k]) || 'pending']))]
   }
   const rows = past.map((v, i) => chips(i + 1, v, false, false))
-  if (job.round > 0 && job.stage !== 'merged') rows.push(chips(job.round, { ...job.reviews, judge: job.judge }, job.stage === 'review', job.stage === 'judge'))
+  if (job.round > 0 && !DONE.has(job.stage)) rows.push(chips(job.round, { ...job.reviews, judge: job.judge }, job.stage === 'review', job.stage === 'judge'))
   allRounds.set(job.id, { title: job.feature, rows })
   const shown = rows.slice(-VISIBLE_ROUNDS)
   const more = rows.length > VISIBLE_ROUNDS
@@ -707,10 +712,11 @@ function card(job, past) {
       ? `<span>${esc(names(asked))} asked for changes.</span><code>/factory feedback ${esc(job.id)}</code>`
     : job.stage === 'pr' ? `<code>/factory approve ${esc(job.id)}</code><code>/factory feedback ${esc(job.id)}</code>`
     : job.stage === 'merge-ready' ? `<span>Approved by ${esc(names(by))}. Merging is yours.</span>`
-    : job.stage === 'interview' ? '<span>Answer in the session that runs this job.</span>' : ''
+    : job.stage === 'interview' ? '<span>Answer in the session that runs this job.</span>'
+    : job.stage === 'pick' ? '<span>Pick an option in the session that runs this job.</span>' : ''
   const [num, ...slug] = job.id.split('-')
   return `
-    <div class="card ${ask ? 'golden' : ''} ${live ? 'live' : ''} ${job.stage === 'merged' ? 'done' : ''} ${bub ? 'has-bubble' : ''}"
+    <div class="card ${ask ? 'golden' : ''} ${live ? 'live' : ''} ${DONE.has(job.stage) ? 'done' : ''} ${bub ? 'has-bubble' : ''}"
          role="button" tabindex="0" data-job="${esc(job.id)}">
       ${bub}
       <div class="tab">${live ? '<span class="pulse" aria-label="running"></span>' : ''}<b>${esc(num)}</b><span>${esc(slug.join('-'))}</span></div>
@@ -735,6 +741,7 @@ function derived(job) {
   }
   if (job.stage === 'build') return `build: ${job.task || ''}`
   if (job.stage === 'interview') return 'waiting for your answers'
+  if (job.stage === 'pick') return 'waiting for you to pick a prototype'
   if (job.stage === 'needs-human') return 'blocked, waiting for you'
   if (job.stage === 'pr') return 'PR open, waiting for your review'
   if (job.stage === 'team-review') return `team review: ${(job.approvals?.by || []).length} of ${job.approvals?.need ?? TEAM_APPROVALS} approvals`
@@ -752,7 +759,7 @@ function setStdoutMin(v) {
 }
 async function renderStdout() {
   $('stdout').classList.toggle('min', stdoutMin)
-  const open = jobs.filter((j) => j.stage !== 'merged')
+  const open = jobs.filter((j) => !DONE.has(j.stage))
   const blocks = await Promise.all(open.map(async (job) => {
     let lines = []
     if (Date.now() - (noLog.get(job.id) || 0) > RETRY_MS) {
@@ -895,7 +902,8 @@ function toast(job, kind, text) {
 
 function stageToast(job, from) {
   switch (job.stage) {
-    case 'interview': return ['human', 'discovery has questions: answer the interview']
+    case 'interview': return ['human', 'discovery needs you: answer, confirm or decide']
+    case 'pick': return ['human', 'prototype options are ready: pick one']
     case 'needs-human': return ['human', `blocked, waiting for you. /factory feedback ${job.id} … or /factory ship ${job.id}`]
     case 'team-review': return ['info', `in team review: waiting for ${job.approvals?.need ?? TEAM_APPROVALS} teammate approvals`]
     case 'merge-ready': return ['human', `approved by ${names(job.approvals?.by || [])}: ready for you to merge`]
@@ -903,6 +911,7 @@ function stageToast(job, from) {
       if (job.approvals?.changes?.length) return ['human', `${names(job.approvals.changes)} asked for changes. /factory feedback ${job.id}`]
       return ['human', `PR is open, waiting for your review${job.pr ? ': ' + job.pr.replace(/^https?:\/\/(www\.)?github\.com\//, '') : ''}`]
     case 'merged': return ['merged', 'PR merged']
+    case 'discarded': return ['info', 'discarded by the human']
     case 'review': return ['info', `review round ${job.round} started`]
     case 'build': return ['info', `building${job.task ? ': ' + job.task : ''}`]
     default: return ['info', `${from} → ${job.stage}`]
@@ -984,6 +993,7 @@ async function listFiles(dir) {
 function fileRank(path) {
   const order = ['discovery.md', 'answers.md', 'spec.md', 'build.md', 'pr.md']
   if (order.includes(path)) return [0, order.indexOf(path), path]
+  if (path.startsWith('prototypes/')) return [0, 1.5, path]
   const review = path.match(/^round-(\d+)\/review-(\w+)\.md$/)
   if (review) return [2, Number(review[1]) * 10 + REVIEWERS.findIndex(([k]) => k === review[2]), path]
   const judge = path.match(/^round-(\d+)\/judge\.md$/)
@@ -999,9 +1009,9 @@ function sortFiles(files) {
 }
 
 function tone(first) {
-  if (/^(VERDICT:\s*(PASS|APPROVE)|STATUS:\s*READY)$/.test(first)) return 'good'
-  if (/^VERDICT:\s*(CHANGES|BUILD|SPEC)$/.test(first)) return 'warn'
-  if (/^(VERDICT:\s*ESCALATE|STATUS:\s*BLOCKED)$/.test(first)) return 'stop'
+  if (/^(VERDICT:\s*(PASS|APPROVE)|STATUS:\s*READY|GATE:\s*GO)$/.test(first)) return 'good'
+  if (/^(VERDICT:\s*(CHANGES|BUILD|SPEC)|GATE:\s*REFINE)$/.test(first)) return 'warn'
+  if (/^(VERDICT:\s*ESCALATE|STATUS:\s*BLOCKED|GATE:\s*NO-GO)$/.test(first)) return 'stop'
   return null
 }
 

@@ -25,6 +25,8 @@ one file goes there.
 
 1. `AGENTS.md` (or `CLAUDE.md`).
 2. `<job folder>/spec.md`, `answers.md`, `build.md`, and every `feedback-*.md`.
+   When `answers.md` records a prototype pick, also the chosen option under
+   `<job folder>/prototypes/<k>/` and that round's `compare.md`.
 3. The change: `git log --oneline origin/main..<branch>` and
    `git diff origin/main...<branch>`. Read changed files in full where the diff
    isn't enough.
@@ -39,6 +41,12 @@ one file goes there.
 - **Requirements**: each one is met, not just the ones with a criterion.
 - **The human's decisions**: the interview answers and every feedback item are
   honoured exactly.
+- **The chosen prototype**: when the human picked one, the build behaves like
+  it: the same flow, the same states, the same wording and shapes, wherever the
+  spec doesn't say otherwise. Compare them side by side. Look at what the
+  option does, not at its code: the prototype is a throwaway, and its styling
+  and structure aren't binding. A rejected option's behaviour showing up in the
+  build is a finding too.
 - **Scope**: nothing from "Out of scope" was built, and nothing nobody asked for
   was added.
 - **Copy**: user-facing text says what the spec and the answers say, in the
@@ -65,4 +73,7 @@ Non-blocking observations. Optional.
 - If the spec itself looks wrong (it contradicts the answers or feedback, or a
   criterion can't be met as written), say so as a finding starting with
   `Spec:`. The judge decides whether to send it back to the spec writer.
+- If the build is fine but the right behaviour is a decision nobody made (the
+  answers, the pick and the spec are silent), say so as a finding starting with
+  `Needs input:`, with the options you see. Don't count it against the build.
 - Under Findings, write "None." when there are none.

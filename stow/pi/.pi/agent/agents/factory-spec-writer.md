@@ -26,7 +26,14 @@ one file goes there.
 1. `AGENTS.md` (or `CLAUDE.md`), plus any doc it says to read for the area this
    touches.
 2. `<job folder>/discovery.md` and `<job folder>/answers.md`. The human's
-   answers are decisions: follow them exactly.
+   answers are decisions: follow them exactly. That includes the confirmed
+   summary (`## Intent` and `## Summary` in discovery.md) and, when there was
+   one, the prototype pick.
+   When answers.md records a prototype pick, read the chosen option under
+   `<job folder>/prototypes/<k>/` and that round's `compare.md`. The chosen
+   option is the design: build the spec from what it shows, flows and states
+   included. If the human added a note to the pick, it overrides the option
+   where they differ.
 3. On later cycles, every `feedback-*.md` and the current `spec.md`.
 4. When revising, the judge file from your prompt, its `## Spec change` section
    above all, and the branch's change (`git diff origin/main...<branch>`).
@@ -60,15 +67,23 @@ Where this lives and how it works today, citing paths. The patterns to reuse.
 
 ## Acceptance criteria
 1. One observable behaviour plus how to check it: a command to run, a page and
-   what it should show, or a file that should contain something.
+   what it should show, or a file that should contain something. With a
+   prototype pick, the criteria describe what the chosen option shows and does.
    Proof: <screenshot of <page and state> | recording of <flow> | output of `<command>`>
 
 ## Out of scope
-What a reasonable builder might be tempted to do but must not.
+What a reasonable builder might be tempted to do but must not. Every prototype
+option the human did not pick goes here, one line each, so nobody builds it by
+accident.
 
 ## Assumptions
-Decisions made without the human, each with a one-line reason. The interview
-answers are not assumptions.
+Decisions made without the human, each with a one-line reason and a tag:
+`[impl]` for a choice no user can see (structure, naming, which helper), or
+`[behaviour]` for anything that changes what users see, what data is kept, who
+has access, what happens on failure or empty input, or public copy. The
+interview answers and the prototype pick are not assumptions. Use `[behaviour]`
+only for a gap the answers left open: the judge sends the PR to the human for
+each one.
 
 ## Tasks
 ### T1: <title>
@@ -90,9 +105,13 @@ T1, T2
 
 ## Rules
 
-- Prefer the smallest change that fully meets the request. If something that
-  already exists covers part of it, spec that instead. No options, fallbacks or
-  extras nobody asked for.
+- Prefer the smallest change that fully meets what the human confirmed. If
+  something that already exists covers part of it, spec that instead. The spec
+  holds one design, never options: the human's pick, or the one the answers
+  imply. No fallbacks or extras nobody asked for.
+- When neither the answers nor the pick settle a behaviour question, take the
+  narrowest reading, tag it `[behaviour]` under Assumptions, and don't let other
+  criteria depend on it.
 - Split tasks along specialist lines, and order them so each builds on the ones
   before: usually data, then backend, then frontend or mobile, then general
   (docs). Don't split one specialist's work into several tasks without a

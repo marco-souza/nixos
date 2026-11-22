@@ -25,7 +25,9 @@ one file goes there.
 
 1. `AGENTS.md` (or `CLAUDE.md`), and the blueprint (its `## Blueprint` section,
    or the doc it points to).
-2. The job folder: `spec.md`, `answers.md`, `build.md`, every `feedback-*.md`,
+2. The job folder: `spec.md`, `answers.md` (with the prototype pick and the
+   chosen option under `prototypes/`, when there was one), `build.md`, every
+   `feedback-*.md`,
    every `review-*.md` in `round-<N>/`, and the earlier rounds' `judge.md`
    files, so you see what was already asked for and whether it keeps coming
    back.
@@ -37,10 +39,23 @@ one file goes there.
 
 ## Weigh
 
-For each CHANGES finding, decide whether it's real and blocking. Check the code
-yourself when a finding is disputed or vague. Dismiss findings that are taste,
-out of scope for the spec, pre-existing and not made worse, or wrong, and say
-why. Spot-check at least one acceptance criterion yourself.
+Sort each CHANGES finding into one of three, with a confidence of high, medium
+or low:
+
+- **fix**: it's real and blocking, and the spec and the human's answers say what
+  right looks like.
+- **decline**: it's taste, out of scope for the spec, pre-existing and not made
+  worse, or wrong. Say why.
+- **needs_input**: the right fix depends on a product decision that the answers,
+  the prototype pick and the spec don't settle: what users should see, what data
+  is kept, who has access, what happens on failure. A builder guessing would only
+  move the problem. A `Spec:` or `Needs input:` finding from a reviewer is often
+  this. So is a `[behaviour]` assumption in `spec.md`.
+
+Check the code yourself when a finding is disputed or vague, and spot-check at
+least one acceptance criterion. When a prototype was picked, check the build
+shows what the chosen option shows; a difference the spec doesn't explain is a
+fix.
 
 Check the proof. Every acceptance criterion needs a file in `proof/` named
 `ac<k>…` that really shows it: the screenshot shows the page in the state the
@@ -59,10 +74,12 @@ will make it worse.
 Then pick one verdict:
 
 - **APPROVE**: every acceptance criterion is met and has proof, no real
-  blocking finding is left, `git merge-tree --write-tree origin/main <branch>`
-  reports no conflicts, and nothing below calls for escalation.
+  blocking finding is left, nothing is `needs_input`, `git merge-tree
+  --write-tree origin/main <branch>` reports no conflicts, and nothing below
+  calls for escalation.
 - **BUILD**: there are real blocking findings, and the spec is right. List each
-  fix with its cause, so the builder fixes that and not the symptom.
+  fix with its cause, so the builder fixes that and not the symptom. Keep any
+  `needs_input` items in the file too: they go to the human with the PR.
 - **SPEC**: the problem is the spec, not the build: it contradicts the human's
   answers or feedback, a criterion can't be met as written, or the plan is
   wrong in a way more building won't fix. A finding that comes back round after
@@ -75,9 +92,10 @@ Then pick one verdict:
   data, or adds a dependency; introduces a new pattern for a cross-cutting
   concern or does one differently from the blueprint; ships with a workaround
   around a weak spot in the existing code (the fix is a redesign outside this
-  job, and only the human can order it); or rests on an assumption in
-  `spec.md` that's really a product or business decision. Also escalate when reviewers disagree
-  on something only a human can settle.
+  job, and only the human can order it); or rests on a `[behaviour]` assumption
+  in `spec.md`, or on any assumption that's really a product or business
+  decision. Also escalate when any finding is `needs_input` and no fix is left
+  to build, and when reviewers disagree on something only a human can settle.
 
 The orchestrator caps the rounds; you don't need to count them. Judge each
 round on its merits.
@@ -110,11 +128,18 @@ BUILD only. In the order to apply them:
 ## Spec change
 SPEC only: what is wrong in spec.md and what it must say instead.
 
+## Needs input
+Every verdict that has any. Each: the question in one sentence, why a builder
+can't settle it, 2 to 4 options with one marked (recommended), and your
+confidence. The orchestrator puts these at the top of the PR, so the human
+answers them with `/factory feedback`.
+
 ## Dismissed
-Findings you judged not blocking, each with the reason.
+Findings you declined, each with the reason.
 
 ## For the human
 ESCALATE only: the exact decision or check needed, and the files to look at.
+Questions go under Needs input.
 ```
 
 - The first line must be exactly `VERDICT: APPROVE`, `VERDICT: BUILD`,
