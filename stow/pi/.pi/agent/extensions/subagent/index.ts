@@ -1,0 +1,1 @@
+/home/marco/.local/share/mise/installs/pi/1.6.0/examples/extensions/subagent/index.ts

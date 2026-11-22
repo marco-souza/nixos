@@ -1,6 +1,6 @@
 {
   "defaultProvider": "openrouter",
-  "defaultModel": "openrouter/free",
+  "defaultModel": "nvidia/nemotron-3-ultra-550b-a55b:free",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "enabledModels": [
@@ -8,7 +8,10 @@
     "openrouter/openrouter/fusion",
     "openrouter/openrouter/pareto-code",
     "openrouter/openrouter/auto",
-    "openrouter/openrouter/auto-beta"
+    "openrouter/openrouter/auto-beta",
+    "openrouter/nvidia/nemotron-3.5-super-vl:free",
+    "openrouter/nvidia/nemotron-3.5-lightning:free",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
   ],
   "theme": "dark",
   "externalEditor": "nvim",
@@ -36,7 +39,7 @@
   "extensions": [
     "/home/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts",
     "/Users/marco/w/marco-souza/pi-browser-bridge/pi-extension/src/index.ts",
-    "/home/marco/.local/share/mise/installs/pi/latest/examples/extensions/subagent/index.ts"
+    "/home/marco/.pi/agent/extensions/subagent/index.ts"
   ],
   "lastChangelogVersion": "1.6.0"
 }
