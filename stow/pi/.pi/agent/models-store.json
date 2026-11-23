@@ -919,7 +919,7 @@
         ],
         "cost": {
           "input": 0.0999,
-          "output": 8,
+          "output": 5,
           "cacheRead": 0.0999,
           "cacheWrite": 0
         },
@@ -952,13 +952,13 @@
           "text"
         ],
         "cost": {
-          "input": 0.044,
-          "output": 0.132,
-          "cacheRead": 0.0014,
+          "input": 0.0434,
+          "output": 0.3,
+          "cacheRead": 0.035,
           "cacheWrite": 0
         },
         "contextWindow": 1048576,
-        "maxTokens": 131072,
+        "maxTokens": 943718,
         "compat": {
           "thinkingFormat": "openrouter",
           "supportsStrictMode": true,
@@ -1475,7 +1475,7 @@
         ],
         "cost": {
           "input": 0.0399,
-          "output": 0.0784,
+          "output": 0.074,
           "cacheRead": 0.03,
           "cacheWrite": 0
         },
@@ -2399,13 +2399,13 @@
           "text"
         ],
         "cost": {
-          "input": 0.0138,
-          "output": 0.45,
-          "cacheRead": 0.0138,
+          "input": 0.01456,
+          "output": 0.02912,
+          "cacheRead": 0.002912,
           "cacheWrite": 0
         },
         "contextWindow": 1048576,
-        "maxTokens": 943718,
+        "maxTokens": 131072,
         "compat": {
           "thinkingFormat": "openrouter",
           "supportsStrictMode": true,
@@ -2434,13 +2434,13 @@
           "text"
         ],
         "cost": {
-          "input": 0.044,
-          "output": 0.132,
-          "cacheRead": 0.0014,
+          "input": 0.0434,
+          "output": 0.3,
+          "cacheRead": 0.035,
           "cacheWrite": 0
         },
         "contextWindow": 1048576,
-        "maxTokens": 131072,
+        "maxTokens": 943718,
         "compat": {
           "thinkingFormat": "openrouter",
           "supportsStrictMode": true,
@@ -2550,13 +2550,13 @@
           "text"
         ],
         "cost": {
-          "input": 0.66079,
-          "output": 1.32158,
-          "cacheRead": 0.05474,
+          "input": 0.659112,
+          "output": 1.318224,
+          "cacheRead": 0.054926,
           "cacheWrite": 0
         },
-        "contextWindow": 1048576,
-        "maxTokens": 393216,
+        "contextWindow": 1024000,
+        "maxTokens": 384000,
         "compat": {
           "thinkingFormat": "openrouter",
           "supportsStrictMode": true,
@@ -2586,7 +2586,7 @@
         ],
         "cost": {
           "input": 0.0999,
-          "output": 8,
+          "output": 5,
           "cacheRead": 0.0999,
           "cacheWrite": 0
         },
@@ -2771,6 +2771,42 @@
           "supportsStrictMode": true,
           "sendSessionAffinityHeaders": true,
           "requiresReasoningContentOnAssistantMessages": true
+        },
+        "inputLimits": {
+          "images": {
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        }
+      },
+      {
+        "type": "chat",
+        "id": "dots-studio/dots-3-note-preview:free",
+        "name": "Dots Studio: Dots3-Note Preview (free)",
+        "api": "openai-completions",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 512000,
+        "maxTokens": 460800,
+        "compat": {
+          "thinkingFormat": "openrouter",
+          "supportsStrictMode": true,
+          "sendSessionAffinityHeaders": true
         },
         "inputLimits": {
           "images": {
@@ -9121,9 +9157,9 @@
           "text"
         ],
         "cost": {
-          "input": 0.017,
-          "output": 0.085,
-          "cacheRead": 0.0085,
+          "input": 0.0153,
+          "output": 0.0765,
+          "cacheRead": 0.00765,
           "cacheWrite": 0
         },
         "contextWindow": 131072,
@@ -12621,7 +12657,7 @@
         ],
         "cost": {
           "input": 0.0399,
-          "output": 0.0784,
+          "output": 0.074,
           "cacheRead": 0.03,
           "cacheWrite": 0
         },
@@ -15456,12 +15492,12 @@
           "image"
         ],
         "cost": {
-          "input": 0.14,
+          "input": 0.07,
           "output": 0,
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "contextWindow": 131072,
+        "contextWindow": 262144,
         "compat": {
           "imageInput": "state-image-urls",
           "sendImageOptInHeader": false
@@ -15479,7 +15515,7 @@
           "image"
         ],
         "cost": {
-          "input": 0.09,
+          "input": 0.042,
           "output": 0,
           "cacheRead": 0,
           "cacheWrite": 0
@@ -16145,9 +16181,145 @@
           "imageInput": "state-image-urls",
           "sendImageOptInHeader": false
         }
+      },
+      {
+        "type": "chat",
+        "id": "radixark/daisyrose-27b",
+        "name": "RadixArk: DaisyRose 27B",
+        "api": "openai-completions",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "minimal": null,
+          "low": "low",
+          "medium": "medium",
+          "high": null,
+          "xhigh": "xhigh",
+          "max": null
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0.15,
+          "output": 1.875,
+          "cacheRead": 0.0375,
+          "cacheWrite": 0
+        },
+        "contextWindow": 262144,
+        "maxTokens": 235929,
+        "compat": {
+          "thinkingFormat": "openrouter",
+          "supportsStrictMode": true,
+          "sendSessionAffinityHeaders": true
+        },
+        "inputLimits": {
+          "images": {
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        }
+      },
+      {
+        "type": "chat",
+        "id": "thinkingmachines/inkling-2-mini",
+        "name": "Thinking Machines: Inkling 2 Mini",
+        "api": "openai-completions",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "off": "none",
+          "minimal": "minimal",
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "xhigh": null,
+          "max": "max"
+        },
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0.075,
+          "output": 0.3,
+          "cacheRead": 0.015,
+          "cacheWrite": 0
+        },
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "compat": {
+          "thinkingFormat": "openrouter",
+          "supportsStrictMode": true,
+          "sendSessionAffinityHeaders": true
+        },
+        "inputLimits": {
+          "images": {
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        }
+      },
+      {
+        "type": "classifier",
+        "id": "baseten/bison-1",
+        "name": "Baseten: Bison 1",
+        "api": "typesafe-system-one",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0.1,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 32768,
+        "compat": {
+          "imageInput": "state-image-urls",
+          "sendImageOptInHeader": false
+        }
+      },
+      {
+        "type": "classifier",
+        "id": "baseten/groundhog-1",
+        "name": "Baseten: Groundhog 1",
+        "api": "typesafe-system-one",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0.035,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "contextWindow": 16384,
+        "compat": {
+          "imageInput": "state-image-urls",
+          "sendImageOptInHeader": false
+        }
       }
     ],
-    "checkedAt": 1795360235430
+    "checkedAt": 1795436925762
   },
   "amazon-bedrock": {
     "models": [
@@ -23448,6 +23620,6 @@
     ],
     "lastModified": 1795182846000,
     "etag": "W/\"300c1e9c8e8a20d60fd632917781d4d4\"",
-    "checkedAt": 1795357497683
+    "checkedAt": 1795435914695
   }
 }
