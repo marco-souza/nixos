@@ -628,13 +628,15 @@ needed when that isn't running.
 
 ## /factory dashboard
 
-Run **Bootstrap**, then tell the user to run, from `<repo>`:
+Run **Bootstrap**, then **always start the dashboard yourself, every time**,
+never just tell the user to run it. If something already listens on port 8000,
+kill it first and start a fresh one. From `<repo>`, run in the background:
 
 ```bash
-python3 ~/.claude/skills/factory/sync.py --serve
+lsof -ti :8000 | xargs kill 2>/dev/null; python3 ~/.claude/skills/factory/sync.py --serve
 ```
 
-and open <http://localhost:8000/dashboard.html>. That serves the board on
+Then tell the user to open <http://localhost:8000/dashboard.html>. That serves the board on
 localhost only and syncs PR state every minute (`--serve <port>` for another
 port; `--watch` alone syncs without serving, beside a server that is already
 running). The page polls every two seconds.
@@ -646,8 +648,9 @@ Merged) are colour pills
 with a job count
 that open into a lane on click. Review and judge chips fill in as verdicts
 land, a card's PR link opens the PR, clicking a card shows its markdown
-files, and state changes pop up as toasts. Don't start the
-server yourself unless asked.
+files, and state changes pop up as toasts. Starting the server is your job,
+not the user's: do it on every `/factory dashboard`, and restart it if one is
+already running.
 
 ## Reporting
 
