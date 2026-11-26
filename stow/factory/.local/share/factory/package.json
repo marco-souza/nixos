@@ -1,0 +1,8 @@
+{
+  "name": "factory",
+  "private": true,
+  "type": "module",
+  "bin": { "factory": "src/cli.ts" },
+  "scripts": { "test": "bun test" },
+  "devDependencies": { "@types/bun": "latest" }
+}
