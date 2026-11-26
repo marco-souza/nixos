@@ -193,7 +193,8 @@
     "skill-creator@anthropic-plugin-directory": true,
     "playwright@anthropic-plugin-directory": true,
     "mattpocock-skills@claude-plugins-official": true,
-    "levels-fyi@levels-fyi": true
+    "levels-fyi@levels-fyi": true,
+    "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "marco-plugins": {
