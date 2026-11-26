@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { formatDuration, formatEvent } from '../tail'
+import { createFormatter, formatDuration, formatEvent } from '../tail'
 
 const fixture = async (name: string) =>
   (await Bun.file(join(import.meta.dir, 'fixtures/stream', name)).text()).split('\n').filter(Boolean)
@@ -17,9 +17,10 @@ afterEach(() => {
   }
 })
 
-/** Format every fixture line in order (formatEvent tracks tool names across lines). */
+/** Format every fixture line in order with one formatter (it tracks tool names across lines). */
 async function render(name: string, format: 'claude' | 'pi', width = 120) {
-  return (await fixture(name)).map((l) => formatEvent(l, format, width))
+  const fmt = createFormatter(format, width)
+  return (await fixture(name)).map((l) => fmt(l))
 }
 
 describe('claude stream', () => {
@@ -54,7 +55,8 @@ describe('claude stream', () => {
     expect(lines[7]).toBe('✗ Read: File does not exist.')
     process.env.FORCE_COLOR = '1'
     delete process.env.NO_COLOR
-    const colored = (await fixture('claude.jsonl')).map((l) => formatEvent(l, 'claude', 120))
+    const fmt = createFormatter('claude', 120)
+    const colored = (await fixture('claude.jsonl')).map((l) => fmt(l))
     expect(colored[7]).toBe('\x1b[31m✗ Read: File does not exist.\x1b[0m')
   })
 
@@ -107,6 +109,49 @@ describe('pi stream', () => {
     delete process.env.NO_COLOR
     expect(formatEvent('{"type":"agent_settled","aborted":false}', 'pi')).toBe('\x1b[32m✓ done\x1b[0m')
   })
+})
+
+describe('per-stream state', () => {
+  const use = (id: string, name: string) =>
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: {} }] } })
+  const fail = (id: string, text = 'boom') =>
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: text }] } })
+
+  test('formatters do not cross-label the same tool id', () => {
+    const a = createFormatter('claude')
+    const b = createFormatter('claude')
+    a(use('toolu_1', 'Bash'))
+    b(use('toolu_1', 'Edit'))
+    expect(a(fail('toolu_1'))).toBe('✗ Bash: boom')
+    expect(b(fail('toolu_1'))).toBe('✗ Edit: boom')
+  })
+
+  test('an entry is dropped once its result arrives', () => {
+    const f = createFormatter('claude')
+    f(use('toolu_1', 'Bash'))
+    expect(f(fail('toolu_1'))).toBe('✗ Bash: boom')
+    expect(f(fail('toolu_1'))).toBe('✗ tool: boom')
+  })
+
+  test('formatEvent is stateless: unknown id renders as tool', () => {
+    expect(formatEvent(use('toolu_9', 'Bash'), 'claude')).toStartWith('▸ Bash')
+    expect(formatEvent(fail('toolu_9'), 'claude')).toBe('✗ tool: boom')
+  })
+})
+
+test('control sequences in agent text and args are stripped', () => {
+  const text = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi \x1b[2Jthere' }] } })
+  const out = formatEvent(text, 'claude')!
+  expect(out).not.toContain('\x1b')
+  expect(out).toContain('hi [2Jthere')
+  const tool = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: { command: 'echo \x1b]0;x\x07' } }] } })
+  expect(formatEvent(tool, 'claude')).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]/)
+  expect(formatEvent('raw \x1b[31m line', 'claude')).not.toContain('\x1b')
+})
+
+test('is_error result with subtype success shows the first line of result', () => {
+  const line = JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'API Error: 500\nmore' })
+  expect(formatEvent(line, 'claude')).toBe('✗ failed: API Error: 500')
 })
 
 test('formatDuration', () => {
