@@ -44,7 +44,7 @@ describe('writeRunScript', () => {
 
   test('paths with quotes are shell-quoted', () => {
     const s = writeRunScript(req({ cwd: "/tmp/it's" }))
-    expect(s).toContain(`cd '/tmp/it'\\''s' || exit 97`)
+    expect(s).toContain(`cd '/tmp/it'\\''s' || { echo 97 > '${dir}/a.done'; exit 97; }`)
   })
 })
 
@@ -54,25 +54,42 @@ describe('TmuxSpawner', () => {
     const r = req()
     await new TmuxSpawner(exec).start(r)
     expect(exec.calls).toEqual([
-      ['tmux', 'new-window', '-d', '-t', 'factory-j', '-n', 'planner', '-c', dir, `bash '${r.scriptFile}'`],
-      ['tmux', 'set-option', '-w', '-t', 'factory-j:planner', 'remain-on-exit', 'on'],
+      ['tmux', 'new-window', '-d', '-t', '=factory-j:', '-n', 'planner', '-c', dir, `bash '${r.scriptFile}'`],
+      ['tmux', 'set-option', '-w', '-t', '=factory-j:planner', 'remain-on-exit', 'on'],
     ])
   })
 
   test('interactive start also selects the window', async () => {
     const exec = new FakeExec()
     await new TmuxSpawner(exec).start(req({ interactive: true }))
-    expect(exec.calls.at(-1)).toEqual(['tmux', 'select-window', '-t', 'factory-j:planner'])
+    expect(exec.calls.at(-1)).toEqual(['tmux', 'select-window', '-t', '=factory-j:planner'])
   })
 
   test('ensureSession creates the session only when missing', async () => {
     const missing = new FakeExec([{ match: ['tmux', 'has-session'], result: { code: 1 } }])
     await new TmuxSpawner(missing).ensureSession('j', dir, 'drv')
     expect(missing.calls[1]).toEqual(['tmux', 'new-session', '-d', '-s', 'factory-j', '-n', 'driver', '-c', dir, 'drv'])
-    expect(missing.calls[2]).toEqual(['tmux', 'set-option', '-t', 'factory-j', 'status-left', '#[bold]factory #S '])
+    expect(missing.calls[2]).toEqual(['tmux', 'set-option', '-t', '=factory-j', 'status-left', '#[bold]factory #S '])
+    expect(missing.calls[3]).toEqual(['tmux', 'set-option', '-t', '=factory-j', 'remain-on-exit', 'on'])
     const present = new FakeExec()
     await new TmuxSpawner(present).ensureSession('j', dir, 'drv')
     expect(present.calls).toHaveLength(1)
+  })
+
+  test('session names that are prefixes of each other do not collide', async () => {
+    const exec = new FakeExec()
+    const sp = new TmuxSpawner(exec)
+    await sp.ensureSession('a', dir, 'drv')
+    await sp.start(req({ jobId: 'a' }))
+    await sp.killAgents('a')
+    await sp.killSession('a')
+    const targets = exec.calls.flatMap((c) => {
+      const i = c.indexOf('-t')
+      return i < 0 ? [] : [c[i + 1]]
+    })
+    expect(targets.length).toBeGreaterThan(0)
+    for (const t of targets) expect(t.startsWith('=factory-a')).toBe(true)
+    expect(exec.calls).toContainEqual(['tmux', 'kill-session', '-t', '=factory-a'])
   })
 
   test('killAgents kills every window but driver', async () => {
@@ -80,15 +97,15 @@ describe('TmuxSpawner', () => {
     await new TmuxSpawner(exec).killAgents('j')
     const kills = exec.calls.filter((c) => c[1] === 'kill-window')
     expect(kills).toEqual([
-      ['tmux', 'kill-window', '-t', 'factory-j:planner'],
-      ['tmux', 'kill-window', '-t', 'factory-j:builder'],
+      ['tmux', 'kill-window', '-t', '=factory-j:planner'],
+      ['tmux', 'kill-window', '-t', '=factory-j:builder'],
     ])
   })
 
   test('respawnDriver respawns when the session exists, creates it otherwise', async () => {
     const present = new FakeExec()
     await new TmuxSpawner(present).respawnDriver('j', dir, 'drv')
-    expect(present.calls.at(-1)).toEqual(['tmux', 'respawn-window', '-k', '-t', 'factory-j:driver', '-c', dir, 'drv'])
+    expect(present.calls.at(-1)).toEqual(['tmux', 'respawn-window', '-k', '-t', '=factory-j:driver', '-c', dir, 'drv'])
     const missing = new FakeExec([{ match: ['tmux', 'has-session'], result: { code: 1 } }])
     await new TmuxSpawner(missing).respawnDriver('j', dir, 'drv')
     expect(missing.calls.some((c) => c[1] === 'new-session')).toBe(true)
@@ -120,6 +137,17 @@ describe('InlineSpawner', () => {
     const r = req({ command: 'exit 3' })
     await new InlineSpawner(realExec).start(r)
     expect(readExitCode(r.doneFile)).toBe(3)
+  })
+})
+
+describe('bad cwd', () => {
+  test('InlineSpawner records exit 97 when cwd does not exist', async () => {
+    const r = req({ cwd: join(dir, 'missing') })
+    await new InlineSpawner(realExec).start(r)
+    expect(readExitCode(r.doneFile)).toBe(97)
+    const i = req({ cwd: join(dir, 'missing'), interactive: true, doneFile: join(dir, 'i.done') })
+    await new InlineSpawner(realExec).start(i)
+    expect(readExitCode(i.doneFile)).toBe(97)
   })
 })
 

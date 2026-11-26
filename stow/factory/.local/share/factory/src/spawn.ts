@@ -30,17 +30,22 @@ export interface Spawner {
 }
 
 const session = (jobId: string) => `factory-${jobId}`
+// `=` makes tmux match the name exactly; bare names fall back to prefix matching.
+const exact = (jobId: string) => `=${session(jobId)}`
+
+// A bad cwd must still leave an exit code, or the waiter runs to its timeout.
+const cdFail = (req: SpawnRequest) => `{ echo 97 > ${shq(req.doneFile)}; exit 97; }`
 
 /** Write `req.scriptFile` and return its content. */
 export function writeRunScript(req: SpawnRequest): string {
   const lines = ['#!/usr/bin/env bash']
   if (req.interactive) {
-    lines.push(`cd ${shq(req.cwd)} || exit 97`, req.command, `echo $? > ${shq(req.doneFile)}`)
+    lines.push(`cd ${shq(req.cwd)} || ${cdFail(req)}`, req.command, `echo $? > ${shq(req.doneFile)}`)
   } else {
     const tail = req.tail ? ` | ${shq(process.execPath)} ${shq(CLI_PATH)} tail --format ${req.tail}` : ''
     lines.push(
       'set -o pipefail',
-      `cd ${shq(req.cwd)} || exit 97`,
+      `cd ${shq(req.cwd)} || ${cdFail(req)}`,
       `${req.command} 2>&1 | tee -a ${shq(req.logFile)}${tail}`,
       `echo "\${PIPESTATUS[0]}" > ${shq(req.doneFile)}`,
     )
@@ -58,13 +63,15 @@ export class TmuxSpawner implements Spawner {
   }
 
   private async hasSession(jobId: string): Promise<boolean> {
-    return (await this.tmux('has-session', '-t', session(jobId))).code === 0
+    return (await this.tmux('has-session', '-t', exact(jobId))).code === 0
   }
 
   private async createSession(jobId: string, cwd: string, driverCmd: string): Promise<void> {
-    const s = session(jobId)
-    await this.tmux('new-session', '-d', '-s', s, '-n', 'driver', '-c', cwd, driverCmd)
+    await this.tmux('new-session', '-d', '-s', session(jobId), '-n', 'driver', '-c', cwd, driverCmd)
+    const s = exact(jobId)
     await this.tmux('set-option', '-t', s, 'status-left', '#[bold]factory #S ')
+    // So an agent that fails instantly keeps its window even before the per-window option lands.
+    await this.tmux('set-option', '-t', s, 'remain-on-exit', 'on')
   }
 
   async ensureSession(jobId: string, cwd: string, driverCmd: string): Promise<void> {
@@ -73,10 +80,10 @@ export class TmuxSpawner implements Spawner {
 
   async start(req: SpawnRequest): Promise<void> {
     writeRunScript(req)
-    const target = `${session(req.jobId)}:${req.window}`
+    const target = `${exact(req.jobId)}:${req.window}`
     // -d: never steal focus from the driver or the human.
     const created = await this.tmux(
-      'new-window', '-d', '-t', session(req.jobId), '-n', req.window, '-c', req.cwd, `bash ${shq(req.scriptFile)}`,
+      'new-window', '-d', '-t', `${exact(req.jobId)}:`, '-n', req.window, '-c', req.cwd, `bash ${shq(req.scriptFile)}`,
     )
     if (created.code !== 0) throw new Error(`tmux new-window ${req.window}: ${created.stderr.trim()}`)
     // Keep a failed agent's window for inspection.
@@ -85,7 +92,7 @@ export class TmuxSpawner implements Spawner {
   }
 
   private async windows(jobId: string, format: string): Promise<string[]> {
-    const r = await this.tmux('list-windows', '-t', session(jobId), '-F', format)
+    const r = await this.tmux('list-windows', '-t', exact(jobId), '-F', format)
     return r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []
   }
 
@@ -95,7 +102,7 @@ export class TmuxSpawner implements Spawner {
   }
 
   async kill(jobId: string, window: string): Promise<void> {
-    await this.tmux('kill-window', '-t', `${session(jobId)}:${window}`)
+    await this.tmux('kill-window', '-t', `${exact(jobId)}:${window}`)
   }
 
   async killAgents(jobId: string): Promise<void> {
@@ -105,12 +112,12 @@ export class TmuxSpawner implements Spawner {
   }
 
   async killSession(jobId: string): Promise<void> {
-    await this.tmux('kill-session', '-t', session(jobId))
+    await this.tmux('kill-session', '-t', exact(jobId))
   }
 
   async respawnDriver(jobId: string, cwd: string, driverCmd: string): Promise<void> {
     if (!(await this.hasSession(jobId))) return this.createSession(jobId, cwd, driverCmd)
-    await this.tmux('respawn-window', '-k', '-t', `${session(jobId)}:driver`, '-c', cwd, driverCmd)
+    await this.tmux('respawn-window', '-k', '-t', `${exact(jobId)}:driver`, '-c', cwd, driverCmd)
   }
 }
 
