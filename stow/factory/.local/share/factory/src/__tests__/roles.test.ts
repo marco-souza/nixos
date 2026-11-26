@@ -39,6 +39,13 @@ describe('parseRole', () => {
   test('missing frontmatter fails', () => {
     expect(() => parseRole('just text', 'x.md')).toThrow(/frontmatter/)
   })
+  test('long run of inner blank lines parses quickly and is kept', () => {
+    const inner = '\n'.repeat(41)
+    const t0 = performance.now()
+    const r = parseRole(fm(base, `A${inner}B`), 'x.md')
+    expect(performance.now() - t0).toBeLessThan(100)
+    expect(r.body).toBe(`A${inner}B`)
+  })
   test('include list', () => {
     expect(parseRole(fm([...base, 'include: []']), 'x.md').include).toEqual([])
     expect(parseRole(fm([...base, 'include: [_common, _extra]']), 'x.md').include).toEqual(['_common', '_extra'])

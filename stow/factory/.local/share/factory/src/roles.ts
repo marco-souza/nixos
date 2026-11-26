@@ -20,7 +20,12 @@ const TIERS: readonly string[] = ['high', 'medium', 'low']
 const KEYS = ['name', 'description', 'tools', 'browser', 'interactive', 'tier', 'include']
 
 function trimBlankLines(s: string): string {
-  return s.replace(/^(\s*\n)+/, '').replace(/(\n\s*)+$/, '')
+  const lines = s.split('\n')
+  let start = 0
+  let end = lines.length
+  while (start < end && lines[start].trim() === '') start++
+  while (end > start && lines[end - 1].trim() === '') end--
+  return lines.slice(start, end).join('\n')
 }
 
 function list(v: string, file: string, key: string): string[] {
