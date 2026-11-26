@@ -1,0 +1,25 @@
+{
+  "base": "main",
+  "setup": [],
+  "docs": {
+    "requirements": "docs/requirements",
+    "techDiscovery": "docs/tech-discovery",
+    "design": "docs/design-docs",
+    "specs": "docs/specs",
+    "testPlans": "docs/test-plans"
+  },
+  "hooks": {},
+  "validators": ["e2e", "user"],
+  "roles": {},
+  "defaultHarness": "claude",
+  "models": {
+    "claude": { "high": "opus", "medium": "sonnet", "low": "haiku" },
+    "pi": {}
+  },
+  "timeoutsMin": { "high": 45, "medium": 30, "low": 15 },
+  "maxTrips": 3,
+  "maxDiscoveryLoops": 3,
+  "qaReadyTimeoutMin": 20,
+  "qaPollSec": 15,
+  "docsCommitType": "docs"
+}
