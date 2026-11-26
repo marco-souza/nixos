@@ -98,7 +98,7 @@ function validationJudge(job: Job, o: Done, limits: Limits): Job {
     case 'ENV':
       // One ENV retry per trip: wait for QA again and re-run validation, then pause.
       if (job.envRetries < 1) return goTo(job, 'qa-wait', { trips, envRetries: job.envRetries + 1 })
-      return needsHuman(job, 'escalation', 'human-review', { trips, reasonFile: o.reasonFile ?? job.reasonFile })
+      return needsHuman(job, 'escalation', 'human-review', { trips, capHit: 'env', reasonFile: o.reasonFile ?? job.reasonFile, questionsFile: null })
     case 'ESCALATE':
       return needsHuman(job, 'escalation', 'human-review', { trips, ...judgeFiles(job, o) })
   }
@@ -150,10 +150,12 @@ function command(job: Job, c: Command): Job {
       return goTo(job, 'requirements', { ...patch, trip: 0 })
     }
     case 'retry': {
-      if (job.stage !== 'needs-human' || job.waitingFor !== 'failure') {
+      if (job.stage !== 'needs-human' || (job.waitingFor !== 'failure' && job.capHit !== 'env')) {
         const waiting = job.stage === 'needs-human' ? ` waiting for ${job.waitingFor}` : ''
         throw new CommandError(`nothing to retry: ${job.id} is in ${job.stage}${waiting}`)
       }
+      // QA is back: wait for it and validate again, in the same trip.
+      if (job.capHit === 'env') return goTo(job, 'qa-wait', { ...cleared, envRetries: 0 })
       if (job.capHit === 'trips') {
         return goTo(job, 'planning', { ...cleared, extraTrips: job.extraTrips + 1, ...newTrip(job.trips, job.cycle, job.trip + 1) })
       }

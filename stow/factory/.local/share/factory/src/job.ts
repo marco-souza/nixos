@@ -8,6 +8,7 @@ export type Stage =
   | 'test-planning' | 'rebase' | 'qa-wait' | 'validation' | 'validation-judge'
   | 'human-review' | 'finalize' | 'done' | 'needs-human' | 'discarded'
 export type WaitingFor = null | 'requirements' | 'human-review' | 'escalation' | 'failure'
+export type CapHit = null | 'trips' | 'discovery' | 'env'
 
 export interface TripRecord {
   cycle: number
@@ -37,7 +38,7 @@ export interface Job {
   waitingSince: string | null
   reason: string | null
   resumeStage: Stage | null
-  capHit: null | 'trips' | 'discovery'
+  capHit: CapHit
   reasonFile: string | null
   questionsFile: string | null
   feedbackCount: number

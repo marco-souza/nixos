@@ -179,6 +179,14 @@ describe('route: validation-judge', () => {
     expect(j).toMatchObject({ stage: 'needs-human', waitingFor: 'escalation', resumeStage: 'human-review', reasonFile: '/vj.md' })
   })
 
+  test('second ENV marks the pause as an env cap without stale questions', () => {
+    const j = route(
+      inTrip({ stage: 'validation-judge', envRetries: 1, questionsFile: '/old-q.md' }),
+      done('validation-judge', { verdict: 'ENV', reasonFile: '/vj.md' }), L, now,
+    )
+    expect(j).toMatchObject({ capHit: 'env', questionsFile: null })
+  })
+
   test('ESCALATE pauses for the human, resuming in human-review', () => {
     const j = route(inTrip({ stage: 'validation-judge' }), done('validation-judge', { verdict: 'ESCALATE', reasonFile: '/vj.md', questionsFile: '/vj.md' }), L, now)
     expect(j).toMatchObject({ stage: 'needs-human', waitingFor: 'escalation', resumeStage: 'human-review', trip: 1, questionsFile: '/vj.md' })
@@ -234,6 +242,14 @@ describe('applyCommand: approve', () => {
       .toMatchObject({ stage: 'test-planning', waitingFor: null, waitingSince: null, resumeStage: null, capHit: null, reason: null })
     expect(applyCommand(inTrip({ ...esc, resumeStage: 'human-review' }), { kind: 'approve' }, now))
       .toMatchObject({ stage: 'human-review', waitingFor: 'human-review', waitingSince: now.toISOString(), resumeStage: null })
+  })
+
+  test('an env cap goes on to human-review', () => {
+    const j = applyCommand(
+      inTrip({ stage: 'needs-human', waitingFor: 'escalation', capHit: 'env', resumeStage: 'human-review', envRetries: 1 }),
+      { kind: 'approve' }, now,
+    )
+    expect(j).toMatchObject({ stage: 'human-review', waitingFor: 'human-review', capHit: null, resumeStage: null })
   })
 
   test('any other needs-human → finalize, not ready', () => {
@@ -332,7 +348,22 @@ describe('applyCommand: retry', () => {
     expect(j).toMatchObject({ stage: 'build', trip: 1, waitingFor: null, resumeStage: null, reason: null, extraTrips: 0 })
   })
 
-  test('only a failure can be retried', () => {
+  test('an env cap validates again in the same trip', () => {
+    const trips = [rec(1, 1)]
+    const j = applyCommand(
+      inTrip({
+        stage: 'needs-human', waitingFor: 'escalation', capHit: 'env', resumeStage: 'human-review',
+        envRetries: 1, trips, reasonFile: '/vj.md',
+      }),
+      { kind: 'retry' }, now,
+    )
+    expect(j).toMatchObject({
+      stage: 'qa-wait', envRetries: 0, trip: 1, waitingFor: null, waitingSince: null, capHit: null, resumeStage: null, reason: null,
+    })
+    expect(j.trips).toEqual(trips)
+  })
+
+  test('only a failure or an env cap can be retried', () => {
     const esc = () => applyCommand(inTrip({ stage: 'needs-human', waitingFor: 'escalation', resumeStage: 'test-planning' }), { kind: 'retry' }, now)
     expect(esc).toThrow(CommandError)
     expect(esc).toThrow('nothing to retry: 261126-x is in needs-human waiting for escalation')
