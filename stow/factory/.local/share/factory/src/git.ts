@@ -17,6 +17,11 @@ async function ok(exec: Exec, cmd: string[], cwd: string): Promise<ExecResult> {
   return r
 }
 
+/** Destructive operations only ever touch the factory's own branches. */
+function factoryOnly(op: string, branch: string): void {
+  if (!branch.startsWith('factory/')) throw new Error(`refusing to ${op} "${branch}": not a factory/ branch`)
+}
+
 export class Git {
   constructor(private exec: Exec, private repo: string) {}
 
@@ -55,6 +60,7 @@ export class Git {
   }
 
   async push(cwd: string, branch: string, o: { force?: boolean } = {}): Promise<void> {
+    factoryOnly('push', branch)
     await this.git(['push', ...(o.force ? ['--force-with-lease'] : []), '-u', 'origin', branch], cwd)
   }
 
@@ -71,6 +77,7 @@ export class Git {
   }
 
   async deleteBranch(branch: string): Promise<void> {
+    factoryOnly('delete', branch)
     const local = await this.exec.run(['git', 'branch', '-D', branch], { cwd: this.repo })
     if (local.code !== 0 && !/not found/i.test(local.stderr)) {
       throw new GitError(['git', 'branch', '-D', branch], local)

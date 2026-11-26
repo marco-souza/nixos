@@ -92,6 +92,28 @@ describe('Git', () => {
     const { repo, git } = await setup()
     await expect(git.createWorktree('b', join(repo, 'w'), 'nope')).rejects.toThrow(/git fetch origin nope/)
   })
+
+  test('push and deleteBranch refuse anything but factory/ branches', async () => {
+    const exec = new FakeExec()
+    const git = new Git(exec, '/r')
+    for (const branch of ['main', 'master', 'develop', 'feature/factory/x', 'factory']) {
+      await expect(git.push('/w', branch)).rejects.toThrow(`refusing to push "${branch}": not a factory/ branch`)
+      await expect(git.push('/w', branch, { force: true })).rejects.toThrow('not a factory/ branch')
+      await expect(git.deleteBranch(branch)).rejects.toThrow(`refusing to delete "${branch}": not a factory/ branch`)
+    }
+    expect(exec.calls).toEqual([])
+  })
+
+  test('forced push uses --force-with-lease, never --force', async () => {
+    const exec = new FakeExec()
+    const git = new Git(exec, '/r')
+    await git.push('/w', 'factory/j', { force: true })
+    await git.push('/w', 'factory/j')
+    expect(exec.calls).toEqual([
+      ['git', 'push', '--force-with-lease', '-u', 'origin', 'factory/j'],
+      ['git', 'push', '-u', 'origin', 'factory/j'],
+    ])
+  })
 })
 
 describe('GitHub', () => {
