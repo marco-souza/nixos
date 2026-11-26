@@ -13,6 +13,7 @@ import { loadRole } from './roles'
 import { shq } from './shell'
 import { readExitCode, waitForFile, type SpawnRequest } from './spawn'
 import { docLinks, STAGES, type AgentResult, type AgentSpec, type Ctx } from './stages'
+import { nextHint, whatFor } from './ui'
 
 export type { Deps } from './deps'
 
@@ -84,26 +85,12 @@ async function stop(c: Ctx, moved: boolean): Promise<'waiting' | 'done' | 'disca
     c.deps.log(`${job.id}: done${job.pr ? ` ${job.pr}` : ''}`)
     return 'done'
   }
-  const why = whatFor(job)
+  const why = whatFor(job) ?? job.stage
   if (moved) await c.deps.notify({ title: `${job.id} needs you`, message: why })
   c.deps.log(`${job.id}: ${why}`)
-  c.deps.log(`${job.id}: next: ${hint(job)}`)
+  const hint = nextHint(job)
+  if (hint) c.deps.log(`${job.id}: next: ${hint}`)
   return 'waiting'
-}
-
-/** What the human is needed for. */
-function whatFor(job: Job): string {
-  if (job.stage === 'human-review') return `Review the PR${job.pr ? `: ${job.pr}` : ''}`
-  if (job.capHit === 'env') return `QA env failed twice; see ${job.reasonFile ?? 'the validation files'}`
-  if (job.waitingFor === 'escalation') return `A judge escalated; see ${job.questionsFile ?? job.reasonFile}`
-  return `Failed: ${job.reason ?? 'unknown reason'}`
-}
-
-function hint(job: Job): string {
-  const id = job.id
-  if (job.capHit === 'env') return `factory run ${id} once QA is back   or   factory approve ${id}   or   factory discard ${id}`
-  if (job.stage === 'human-review' || job.waitingFor === 'escalation') return `factory approve ${id}   or   factory feedback ${id} "…"`
-  return `factory run ${id} to retry   or   factory discard ${id}`
 }
 
 /** ` (verdicts or reason)` for a transition line. */

@@ -23,6 +23,7 @@
   },
   "include": [
     "./src/*.ts",
+    "./src/commands/*.ts",
     "./src/lib/*.ts",
     "./src/__tests__/*.ts"
   ]

@@ -7,10 +7,10 @@ import type { Job, Stage } from './job'
 const START = '<!-- factory:status -->'
 const END = '<!-- /factory:status -->'
 
-const GROUPS = ['Discovery', 'Building', 'Validation', 'Deploy'] as const
+export const GROUPS = ['Discovery', 'Building', 'Validation', 'Deploy'] as const
 type Group = (typeof GROUPS)[number]
 
-const STEPS: { stage: Stage; label: string; group: Group }[] = [
+export const STEPS: { stage: Stage; label: string; group: Group }[] = [
   { stage: 'requirements', label: 'requirements', group: 'Discovery' },
   { stage: 'tech-discovery', label: 'tech discovery', group: 'Discovery' },
   { stage: 'design', label: 'design', group: 'Discovery' },
