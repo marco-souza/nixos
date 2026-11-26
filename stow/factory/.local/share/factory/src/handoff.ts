@@ -22,8 +22,26 @@ export type Check = { ok: true; verdict: string | null } | { ok: false; problem:
 export const LENSES = ['product', 'security', 'code', 'ux', 'ui']
 export const SPECIALISTS = ['backend', 'frontend', 'mobile', 'data', 'infra', 'general']
 
+/** Strips a leading bullet or number and emphasis marks (`**`, `_`, backticks) from a line. */
+function unmark(line: string): string {
+  return line
+    .trim()
+    .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
+    .replace(/[*`]/g, '')
+    .replace(/(^|[\s:])_+|_+($|[\s:,.])/g, '$1$2')
+    .trim()
+}
+
+/** Known specialist names (hyphen variants folded) are lowercased; anything else is returned as written. */
+function normalizeSpecialist(raw: string): string {
+  const v = raw.trim().replace(/[.,;:]+$/, '').trim()
+  const k = v.toLowerCase().replace(/^(front|back)-end$/, '$1end')
+  return SPECIALISTS.includes(k) ? k : v
+}
+
 export function builderFor(specialist: string): string {
-  return `builder-${SPECIALISTS.includes(specialist) ? specialist : 'general'}`
+  const s = normalizeSpecialist(unmark(specialist))
+  return `builder-${SPECIALISTS.includes(s) ? s : 'general'}`
 }
 
 export function outputPath(
@@ -75,12 +93,15 @@ function firstLine(text: string): string {
   return lines(text)[0]!.trimEnd()
 }
 
-const hasHeading = (text: string, h: string) => lines(text).some((l) => l.trimEnd() === h)
+/** A heading line without trailing spaces or one trailing colon. */
+const headingOf = (l: string) => l.replace(/:?\s*$/, '')
+
+const hasHeading = (text: string, h: string) => lines(text).some((l) => headingOf(l) === h)
 
 /** Body lines of the `## ` section named `h`, up to the next `## ` heading; null if absent. */
 function section(text: string, h: string): string[] | null {
   const all = lines(text)
-  const start = all.findIndex((l) => l.trimEnd() === h)
+  const start = all.findIndex((l) => headingOf(l) === h)
   if (start < 0) return null
   const rest = all.slice(start + 1)
   const end = rest.findIndex((l) => l.startsWith('## '))
@@ -90,7 +111,7 @@ function section(text: string, h: string): string[] | null {
 /** Comma-separated values of the first `<key>: a, b` line, lowercased; null if no such line. */
 function listLine(text: string, key: string): string[] | null {
   for (const l of lines(text)) {
-    const m = new RegExp(`^${key}:\\s*(.+?)\\s*$`, 'i').exec(l)
+    const m = new RegExp(`^${key}:\\s*(.+?)\\s*$`, 'i').exec(unmark(l))
     if (m) return m[1]!.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
   }
   return null
@@ -117,15 +138,16 @@ export function parsePlan(text: string): {
     } else if (l.startsWith('### ')) {
       cur = null
     } else if (cur && !cur.specialist) {
-      const s = /^Specialist:\s*(\S+)/i.exec(l)
-      if (s) cur.specialist = s[1]!.toLowerCase()
+      const s = /^Specialist:\s*(.+)$/i.exec(unmark(l))
+      if (s) cur.specialist = normalizeSpecialist(s[1]!)
     }
   }
-  const runBody = (section(text, '## Run') ?? []).find((l) => l.trim() !== '') ?? ''
-  const run = runBody
-    .replace(/^\s*Run:/i, '')
+  const run = (section(text, '## Run') ?? [])
+    .map((l) => unmark(l).replace(/^Run:\s*/i, ''))
+    .filter(Boolean)
+    .join(',')
     .split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\.$/, ''))
     .filter(Boolean)
   const criteria: number[] = []
   for (const l of section(text, '## Acceptance criteria') ?? []) {
@@ -149,8 +171,8 @@ export function parseDiscoveryReview(text: string): { verdict: 'PASS' | 'REWORK'
 }
 
 export function hasHumanQuestions(design: string): boolean {
-  const body = (section(design, '## Questions for the human') ?? []).join('\n').trim()
-  return body !== '' && !/^none\.?$/i.test(body)
+  const body = (section(design, '## Questions for the human') ?? []).join('\n').replace(/[*_`]/g, '').trim()
+  return body !== '' && !/^(none|n\/a)\s*\.?\s*([-\u2013\u2014:].*)?$/is.test(body)
 }
 
 type LineSpec = { prefix: 'VERDICT' | 'STATUS'; words: string[]; questionsOn?: string[] }
@@ -200,7 +222,7 @@ function checkSpec(text: string): Check {
   const badLens = lenses.find((l) => !LENSES.includes(l))
   if (badLens) return { ok: false, problem: `unknown lens "${badLens}"` }
   const headings = lines(text).filter((l) => l.startsWith('## '))
-  if (headings[headings.length - 1]?.trimEnd() !== '## Run') return { ok: false, problem: 'missing "## Run" as the last section' }
+  if (headingOf(headings[headings.length - 1] ?? '') !== '## Run') return { ok: false, problem: 'missing "## Run" as the last section' }
   if (plan.run.length === 0) return { ok: false, problem: 'empty "## Run"' }
   const ids = plan.tasks.map((t) => t.id)
   const unknown = plan.run.find((r) => !ids.includes(r))

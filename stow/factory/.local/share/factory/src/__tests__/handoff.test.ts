@@ -202,3 +202,52 @@ test('builderFor', () => {
   expect(builderFor('general')).toBe('builder-general')
   expect(builderFor('weird')).toBe('builder-general')
 })
+
+test('markdown variants: bold keys, bullets, messy specialists', () => {
+  const plan = [
+    '# S',
+    '## Acceptance criteria',
+    '1. a',
+    '## Tasks',
+    '### T1 a',
+    '- **Specialist:** `backend`',
+    '### T2 b',
+    '**Specialist:** Front-end',
+    '### T3 c',
+    'Specialist: **backend**,',
+    '### T4 d',
+    'Specialist: Quantum',
+    '**Lenses:** code, UI',
+    '## Run',
+    '**Run:** T1, T2',
+    '',
+  ].join('\n')
+  expect(parsePlan(plan).tasks.map((t) => t.specialist)).toEqual(['backend', 'frontend', 'backend', 'Quantum'])
+  expect(parsePlan(plan).lenses).toEqual(['code', 'ui'])
+  expect(parsePlan(plan).run).toEqual(['T1', 'T2'])
+  expect(builderFor('`Front-end`')).toBe('builder-frontend')
+  expect(builderFor('Quantum')).toBe('builder-general')
+})
+
+test('multi-line and bullet Run lists', () => {
+  const head = PLAN.slice(0, PLAN.indexOf('## Run'))
+  expect(parsePlan(`${head}## Run\n\nT1,\nT2\n`).run).toEqual(['T1', 'T2'])
+  expect(parsePlan(`${head}## Run\n- T1\n- T2\n`).run).toEqual(['T1', 'T2'])
+  ok('spec', `${head}## Run\n1. T1\n2. T2\n`)
+  bad('spec', `${head}## Run\n- T1\n- T9\n`, 'Run lists unknown task "T9"')
+})
+
+test('CRLF input and trailing colon headings', () => {
+  ok('spec', PLAN.replace(/\n/g, '\r\n'))
+  ok('requirements', '# T\r\n\r\n## Intent:\r\nx\r\n## Requirements \r\ny\r\n## Decisions\r\nz\r\n')
+  ok('review', 'VERDICT: PASS\r\n', 'PASS')
+})
+
+test('hasHumanQuestions tolerates emphasis and explanations', () => {
+  const d = (body: string) => `## Questions for the human\n${body}\n`
+  expect(hasHumanQuestions(d('**None**'))).toBe(false)
+  expect(hasHumanQuestions(d('N/A'))).toBe(false)
+  expect(hasHumanQuestions(d('None — all decided in requirements'))).toBe(false)
+  expect(hasHumanQuestions(d('None: nothing open'))).toBe(false)
+  expect(hasHumanQuestions(d('Nonetheless, which db?'))).toBe(true)
+})
