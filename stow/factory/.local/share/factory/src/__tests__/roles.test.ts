@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { REQUIRED_ROLES } from '../driver'
 import { listRoles, loadRole, parseRole } from '../roles'
 
 const dir = join(import.meta.dir, 'fixtures', 'roles')
@@ -72,6 +73,6 @@ describe('loadRole', () => {
 
 describe('listRoles', () => {
   test('lists non-underscore md files', () => {
-    expect(listRoles(dir)).toEqual(['sample'])
+    expect(listRoles(dir)).toEqual([...REQUIRED_ROLES, 'sample'].sort())
   })
 })
