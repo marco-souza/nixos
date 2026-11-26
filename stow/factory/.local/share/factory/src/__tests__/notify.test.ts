@@ -24,7 +24,7 @@ describe('notify', () => {
     delete process.env.TMUX
     const exec = new FakeExec()
     await notify(n, exec, 'linux', () => true)
-    expect(exec.calls).toEqual([['notify-send', n.title, n.message]])
+    expect(exec.calls).toEqual([['notify-send', '--', n.title, n.message]])
   })
 
   test('tmux display-message when TMUX is set', async () => {
@@ -33,6 +33,20 @@ describe('notify', () => {
     await notify(n, exec, 'linux', () => true)
     expect(exec.calls[1].slice(0, 2)).toEqual(['tmux', 'display-message'])
     expect(exec.calls[1].join(' ')).toContain(n.message)
+  })
+
+  test('tmux text is escaped against format expansion', async () => {
+    process.env.TMUX = '1'
+    const exec = new FakeExec()
+    await notify({ title: 't', message: '#{session_name} #(x)' }, exec, 'win32', () => true)
+    expect(exec.calls[0]).toEqual(['tmux', 'display-message', '--', 't: ##{session_name} ##(x)'])
+  })
+
+  test('notify-send text starting with a dash is positional', async () => {
+    delete process.env.TMUX
+    const exec = new FakeExec()
+    await notify({ title: 't', message: '--urgency=critical' }, exec, 'linux', () => true)
+    expect(exec.calls[0]).toEqual(['notify-send', '--', 't', '--urgency=critical'])
   })
 
   test('bell written to stderr', async () => {

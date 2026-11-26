@@ -1,6 +1,8 @@
 import type { Exec } from './exec'
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+// tmux expands #{...} and #() in message text; ## is a literal #
+const hash = (s: string) => s.replace(/#/g, '##')
+const esc =(s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 
 /** Tells the human a job needs them. Every channel is best effort; never throws. */
 export async function notify(
@@ -21,8 +23,8 @@ export async function notify(
       exec.run(['osascript', '-e', `display notification "${esc(n.message)}" with title "${esc(n.title)}"`]),
     )
   } else if (platform === 'linux') {
-    await attempt(() => exec.run(['notify-send', n.title, n.message]))
+    await attempt(() => exec.run(['notify-send', '--', n.title, n.message]))
   }
-  if (process.env.TMUX) await attempt(() => exec.run(['tmux', 'display-message', `${n.title}: ${n.message}`]))
+  if (process.env.TMUX) await attempt(() => exec.run(['tmux', 'display-message', '--', `${hash(n.title)}: ${hash(n.message)}`]))
   await attempt(() => write('\x07'))
 }
