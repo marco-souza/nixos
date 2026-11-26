@@ -171,8 +171,10 @@ export function parseDiscoveryReview(text: string): { verdict: 'PASS' | 'REWORK'
 }
 
 export function hasHumanQuestions(design: string): boolean {
-  const body = (section(design, '## Questions for the human') ?? []).join('\n').replace(/[*_`]/g, '').trim()
-  return body !== '' && !/^(none|n\/a)\s*\.?\s*([-\u2013\u2014:].*)?$/is.test(body)
+  const body = (section(design, '## Questions for the human') ?? []).filter((l) => l.trim() !== '')
+  if (body.length === 0) return false
+  // Only a single line counts as "none"; an explanation must follow on the same line.
+  return body.length > 1 || !/^(none|n\/a)[ \t]*\.?[ \t]*([-\u2013\u2014:][^\n]*)?$/i.test(unmark(body[0]!))
 }
 
 type LineSpec = { prefix: 'VERDICT' | 'STATUS'; words: string[]; questionsOn?: string[] }

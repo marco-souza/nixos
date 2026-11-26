@@ -250,4 +250,6 @@ test('hasHumanQuestions tolerates emphasis and explanations', () => {
   expect(hasHumanQuestions(d('None — all decided in requirements'))).toBe(false)
   expect(hasHumanQuestions(d('None: nothing open'))).toBe(false)
   expect(hasHumanQuestions(d('Nonetheless, which db?'))).toBe(true)
+  expect(hasHumanQuestions(d('None\n- which db?'))).toBe(true)
+  expect(hasHumanQuestions(d('- None'))).toBe(false)
 })
