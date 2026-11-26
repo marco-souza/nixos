@@ -17,6 +17,8 @@ export interface TripRecord {
   buildJudge: string | null
   validations: Record<string, string>
   validationJudge: string | null
+  /** Task ids whose builder landed READY in this trip, in order; build resume skips exactly these. */
+  built?: string[]
 }
 
 export interface Job {

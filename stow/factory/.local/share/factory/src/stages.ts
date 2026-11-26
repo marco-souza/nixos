@@ -63,7 +63,6 @@ const present = (...files: (string | null)[]) => files.filter((f): f is string =
 const done = (stage: Stage, o: Partial<Extract<Outcome, { kind: 'done' }>> = {}): Outcome => ({ kind: 'done', stage, ...o })
 const failed = (stage: Stage, reason: string): Outcome => ({ kind: 'failed', stage, reason })
 const firstProblem = (rs: AgentResult[]) => rs.flatMap((r) => (r.ok ? [] : [r.problem]))[0]
-const firstLine = (text: string) => text.replace(/^﻿/, '').split(/\r?\n/)[0]!.trimEnd()
 
 /** Output paths; the trip directory is the current TripRecord's (never reset across cycles). */
 function out(c: Ctx, kind: OutputKind, name?: string): string {
@@ -111,17 +110,39 @@ async function hookEnv(c: Ctx): Promise<HookEnv> {
   return { JOB: c.job.id, PR: c.job.pr ?? '', BRANCH: c.job.branch, SHA: await c.deps.git.head(c.job.worktree) }
 }
 
-/** Runs a configured hook; a non-zero exit is noted, not fatal. */
-async function hook(c: Ctx, name: HookName) {
+/** Runs a configured hook: null when it isn't configured, else its result and, on a non-zero exit, the failure line. */
+async function hook(c: Ctx, name: HookName): Promise<{ stdout: string; failure: string | null } | null> {
   if (!c.cfg.hooks[name]) return null
   const r = await runHook(name, c.cfg, await hookEnv(c), c.job.worktree, c.deps.exec)
-  if (r && r.code !== 0) c.note(`hook ${name} failed (exit ${r.code})${r.stderr.trim() ? `: ${r.stderr.trim().split('\n')[0]}` : ''}`)
-  return r
+  if (!r) return null
+  const why = r.stderr.trim().split('\n')[0]
+  return { stdout: r.stdout, failure: r.code === 0 ? null : `hook ${name} failed (exit ${r.code})${why ? `: ${why}` : ''}` }
+}
+
+/** prOpened assigns the QA env, so it must have run once per PR; its marker lets a retry run it again until it passes. */
+async function prOpened(c: Ctx): Promise<void> {
+  const marker = join(c.paths.jobDir, 'prOpened.ok')
+  if (existsSync(marker)) return
+  const r = await hook(c, 'prOpened')
+  if (r?.failure) throw new Error(r.failure)
+  if (r) writeFileSync(marker, `${c.job.pr}\n`)
+}
+
+/** Asks the qaUrl hook for the QA env when there is none yet. A failure is noted: validators then use a local port. */
+async function qaUrl(c: Ctx): Promise<void> {
+  if (c.job.qaUrl) return
+  const r = await hook(c, 'qaUrl')
+  if (r?.failure) return c.note(r.failure)
+  const url = r?.stdout.trim().split('\n').pop()!.trim()
+  if (url) {
+    c.update({ qaUrl: url })
+    c.note(`QA env: ${url}`)
+  }
 }
 
 export const prTitle = (feature: string) => `[factory] ${feature.replace(/\s+/g, ' ').trim()}`.slice(0, 72).trimEnd()
 
-/** Find or open the draft PR, then ask the qaUrl hook for the QA env. */
+/** Find or open the draft PR, run prOpened if it hasn't passed yet, then ask for the QA env. */
 async function ensurePr(c: Ctx): Promise<void> {
   if (!c.job.pr) {
     const found = await c.deps.gh.findPr(c.job.branch)
@@ -134,17 +155,10 @@ async function ensurePr(c: Ctx): Promise<void> {
       const pr = await c.deps.gh.createDraftPr({ branch: c.job.branch, base: c.cfg.base, title: prTitle(c.job.feature), bodyFile })
       c.update({ pr })
       c.note(`opened draft PR ${pr}`)
-      await hook(c, 'prOpened')
     }
   }
-  if (!c.job.qaUrl) {
-    const r = await hook(c, 'qaUrl')
-    const url = r?.code === 0 ? r.stdout.trim().split('\n').pop()!.trim() : ''
-    if (url) {
-      c.update({ qaUrl: url })
-      c.note(`QA env: ${url}`)
-    }
-  }
+  await prOpened(c)
+  await qaUrl(c)
 }
 
 /** The review a REWORK step answers: the latest one, when it said REWORK. */
@@ -205,16 +219,6 @@ const planning: Step = async (c) => {
 
 const hasSection = (text: string, id: string) => new RegExp(`^## ${id}\\b`, 'm').test(text)
 
-/**
- * A task is built when build.md has its section and the status line is READY. The status line belongs to
- * the last builder, so a task whose section comes before the last one also counts: the driver only moved past it on READY.
- */
-function isBuilt(text: string, id: string): boolean {
-  const sections = [...text.matchAll(/^## (T\d+)\b/gm)].map((m) => m[1])
-  if (!sections.includes(id)) return false
-  return firstLine(text) === 'STATUS: READY' || sections[sections.length - 1] !== id
-}
-
 /** `blocked: <first line under ### Blocked>`, or the status line when there is no such section. */
 function blockedLine(text: string): string {
   const lines = text.split(/\r?\n/)
@@ -231,7 +235,7 @@ const build: Step = async (c) => {
   }
   let pushed = true
   for (const id of plan.run) {
-    if (existsSync(output) && isBuilt(read(output), id)) {
+    if (c.job.trips[c.job.trips.length - 1]?.built?.includes(id)) {
       c.note(`skip ${id}: already built`)
       pushed = false
       continue
@@ -244,6 +248,8 @@ const build: Step = async (c) => {
     const [r] = await c.spawn([{ role, kind: 'build', output, assignment: `Task ${id}`, target: browserTarget(c, role, 0, false), check, resume: false }])
     if (!r!.ok) return failed('build', r!.problem)
     if (r!.verdict === 'BLOCKED') return failed('build', `${role}: ${id} ${blockedLine(r!.text)}`)
+    // Recorded before the push, so a failed push retries the push, not the builder.
+    setTrip(c, (t) => ({ built: [...(t.built ?? []), id] }))
     await push(c)
     pushed = true
   }
@@ -319,6 +325,8 @@ function moveValidationAside(c: Ctx): void {
 
 const qaWait: Step = async (c) => {
   moveValidationAside(c)
+  // The QA env may be assigned some time after the PR opened.
+  await qaUrl(c)
   const clock = { sleep: (ms: number) => c.deps.sleep(ms), now: () => c.deps.now().getTime() }
   const r = await waitQaReady(c.cfg, await hookEnv(c), c.job.worktree, c.deps.exec, clock)
   return r === 'timeout' ? failed('qa-wait', `QA env not ready after ${c.cfg.qaReadyTimeoutMin} min`) : done('qa-wait')

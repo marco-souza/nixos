@@ -60,13 +60,17 @@ type Step = { output?: string | null; exit?: number; hang?: boolean }
 /** Writes each role's output when started and its done file the first time the driver polls the window. */
 class FakeSpawner implements Spawner {
   requests: SpawnRequest[] = []
+  private started = 0
   private counts: Record<string, number> = {}
   private pending = new Map<string, { req: SpawnRequest; step: Step }>()
+  /** The k-th start (1-based) throws, like a failing `tmux new-window`. */
+  failStart = 0
   constructor(private events: string[], private script: Record<string, Step[]> = {}) {}
 
   async ensureSession(): Promise<void> {}
 
   async start(req: SpawnRequest): Promise<void> {
+    if (++this.started === this.failStart) throw new Error(`tmux new-window ${req.window}: no space for new pane`)
     this.events.push(`start ${req.window}`)
     this.requests.push(req)
     const taskFile = req.scriptFile.replace(/\.sh$/, '.task.md')
@@ -114,6 +118,7 @@ class TestExec implements Exec {
   calls: string[][] = []
   bodies: string[] = []
   openPr: string | null = null
+  prBody = 'Old body\n'
   conflict = false
   constructor(private events: string[], private realGit: boolean) {}
 
@@ -137,8 +142,8 @@ class TestExec implements Exec {
       this.openPr = PR
       return ok(`${PR}\n`)
     }
-    if (a === 'pr' && b === 'view') return ok('Old body\n')
-    if (a === 'pr' && b === 'edit' && cmd[4] === '--body-file') this.bodies.push(readFileSync(cmd[5], 'utf8'))
+    if (a === 'pr' && b === 'view') return ok(`${this.prBody}\n`)
+    if (a === 'pr' && b === 'edit' && cmd[4] === '--body-file') this.bodies.push((this.prBody = readFileSync(cmd[5], 'utf8')))
     if (a === 'repo' && b === 'view') return ok('o/r\n')
     return ok()
   }
@@ -243,7 +248,7 @@ describe('runJob', () => {
     expect(job.trips).toEqual([
       {
         cycle: 1, trip: 1, reviews: { product: 'PASS', code: 'PASS', security: 'PASS' }, buildJudge: 'APPROVE',
-        validations: { e2e: 'PASS', user: 'PASS' }, validationJudge: 'PASS',
+        validations: { e2e: 'PASS', user: 'PASS' }, validationJudge: 'PASS', built: ['T1', 'T2'],
       },
     ])
     // tech-discovery → design → … → validation-judge → human-review: 12 transitions.
@@ -330,15 +335,31 @@ describe('runJob', () => {
     expect(job).toMatchObject({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'build' })
     expect(job.reason).toBe('builder-backend: T1 blocked: The spec needs a migration nobody approved.')
     expect(t.spawner.windows('builder-')).toEqual(['builder-backend'])
+    expect(job.trips[0].built ?? []).toEqual([])
   })
 
   test('retry after BLOCKED re-runs the blocked task, not the ones built before it', async () => {
     const t = await setup({ stage: 'build' })
     t.write(t.doc('specs'), SPEC)
     t.write(join(t.paths.tripDir(1), 'build.md'), 'STATUS: BLOCKED\n# Build\n\n## T1\nDone.\n\n## T2\n### Blocked\nNo.\n')
+    const job = t.load()
+    saveJob(t.paths.jobFile, { ...job, trips: [{ ...job.trips[0], built: ['T1'] }] }, new Date())
     expect(await t.run()).toBe('waiting')
     expect(t.spawner.windows('builder-')).toEqual(['builder-frontend'])
     expect(t.activity()).toContain('skip T1: already built')
+    expect(t.load().trips[0].built).toEqual(['T1', 'T2'])
+  })
+
+  test('build resume follows the trip record, not the order of sections in build.md', async () => {
+    const t = await setup({ stage: 'build' })
+    t.write(t.doc('specs'), SPEC.replace('T1, T2', 'T2, T1'))
+    t.write(join(t.paths.tripDir(1), 'build.md'), 'STATUS: BLOCKED\n# Build\n\n## T1\n### Blocked\nNo.\n\n## T2\nDone.\n')
+    const job = t.load()
+    saveJob(t.paths.jobFile, { ...job, trips: [{ ...job.trips[0], built: ['T2'] }] }, new Date())
+    expect(await t.run()).toBe('waiting')
+    expect(t.spawner.windows('builder-')).toEqual(['builder-backend'])
+    expect(t.load()).toMatchObject({ stage: 'human-review' })
+    expect(t.load().trips[0].built).toEqual(['T2', 'T1'])
   })
 
   test('an unknown specialist is noted once and built by builder-general', async () => {
@@ -392,6 +413,7 @@ describe('runJob', () => {
     expect(title).toBe(`[factory] ${'Make the thing '.repeat(8)}work`.slice(0, 72))
     expect(t.events.indexOf('push')).toBeLessThan(t.events.indexOf('gh pr create'))
     expect(readFileSync(join(t.paths.worktree, 'opened.txt'), 'utf8')).toBe(`${PR}\n`)
+    expect(existsSync(join(t.paths.jobDir, 'prOpened.ok'))).toBe(true)
     const job = t.load()
     expect(job).toMatchObject({ pr: PR, qaUrl: `https://qa.example/${ID}`, stage: 'human-review' })
     expect(t.task('validator-e2e')).toContain(`Target: https://qa.example/${ID}`)
@@ -598,6 +620,96 @@ describe('runJob', () => {
     expect(await t.run()).toBe('waiting')
     expect(t.load().stage).toBe('human-review')
     expect(t.activity()).toContain('PR status update failed')
+  })
+
+  test('a failing prOpened hook stops the job, and a retry runs it again', async () => {
+    const hook = 'test -f qa.ok || { echo "no QA env free" >&2; exit 3; }; echo "$PR" > opened.txt'
+    const t = await setup({ stage: 'requirements', config: { hooks: { prOpened: hook } } })
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({
+      stage: 'needs-human', resumeStage: 'requirements', pr: PR, reason: 'hook prOpened failed (exit 3): no QA env free',
+    })
+    expect(existsSync(join(t.paths.jobDir, 'prOpened.ok'))).toBe(false)
+    writeFileSync(join(t.paths.worktree, 'qa.ok'), '')
+    saveJob(t.paths.jobFile, applyCommand(t.load(), { kind: 'retry' }, new Date()), new Date())
+    expect(await t.run()).toBe('waiting')
+    expect(t.load().stage).toBe('human-review')
+    expect(readFileSync(join(t.paths.worktree, 'opened.txt'), 'utf8')).toBe(`${PR}\n`)
+    expect(existsSync(join(t.paths.jobDir, 'prOpened.ok'))).toBe(true)
+    expect(t.exec.gh('pr', 'create')).toHaveLength(1)
+    expect(t.spawner.windows('requirements')).toEqual(['requirements'])
+  })
+
+  test('qa-wait asks the qaUrl hook again when there is no QA env yet', async () => {
+    const t = await setup({ stage: 'qa-wait', config: { hooks: { qaUrl: 'echo https://qa.example/late' } } })
+    t.write(t.doc('test-plans'), canned('test-planner', '', ''))
+    expect(await t.run()).toBe('waiting')
+    expect(t.load().qaUrl).toBe('https://qa.example/late')
+    expect(t.task('validator-e2e')).toContain('Target: https://qa.example/late')
+  })
+
+  test('a failing qaUrl hook in qa-wait is noted and validation goes on locally', async () => {
+    const t = await setup({ stage: 'qa-wait', config: { hooks: { qaUrl: 'echo down >&2; exit 2' } } })
+    t.write(t.doc('test-plans'), canned('test-planner', '', ''))
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'human-review', qaUrl: null })
+    expect(t.activity()).toContain('hook qaUrl failed (exit 2): down')
+    expect(t.task('validator-e2e')).toContain('Target: http://localhost:5110')
+  })
+
+  test('a judge escalation puts its questions below the status block until the pause ends', async () => {
+    const escalate = 'VERDICT: ESCALATE\n\nRisky.\n\n## Questions\n- Ship without a migration?\n- Who owns the cache?\n\n## Notes\nx\n'
+    const t = await setup({ stage: 'review', script: { 'build-judge': [{ output: escalate }] } })
+    t.write(t.doc('specs'), SPEC)
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'needs-human', waitingFor: 'escalation' })
+    const paused = t.exec.prBody
+    expect(paused).toContain(
+      '<!-- /factory:status -->\n\n<!-- factory:decision -->\n## ⏸ Needs your decision\n\n- Ship without a migration?\n- Who owns the cache?\n<!-- /factory:decision -->\n\nOld body',
+    )
+    expect(paused).not.toContain('## Notes')
+    saveJob(t.paths.jobFile, applyCommand(t.load(), { kind: 'approve' }, new Date()), new Date())
+    expect(await t.run()).toBe('waiting')
+    expect(t.load().stage).toBe('human-review')
+    expect(t.exec.prBody).not.toContain('factory:decision')
+    expect(t.exec.prBody).not.toContain('Needs your decision')
+    expect(t.exec.prBody).toEndWith('<!-- /factory:status -->\n\nOld body\n')
+  })
+
+  test('the second ENV pause names the validators evidence in the PR body', async () => {
+    const env = { output: 'VERDICT: ENV\n\nQA is down.\n' }
+    const t = await setup({ stage: 'validation', script: { 'validation-judge': [env, env] } })
+    t.write(t.doc('test-plans'), canned('test-planner', '', ''))
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'needs-human', capHit: 'env' })
+    expect(t.exec.prBody).toContain(
+      `## ⏸ Needs your decision\n\nQA environment failed twice; validators' evidence: .factory/jobs/${ID}/trip-1/validation-judge.md`,
+    )
+  })
+
+  test('a headless step that writes nothing does not pass on an earlier visit doc', async () => {
+    const t = await setup({
+      stage: 'review',
+      script: { 'build-judge': [{ output: 'VERDICT: CHANGES\n\nFix T2.\n' }], planner: [{ output: null }, { output: null }] },
+    })
+    t.write(t.doc('specs'), SPEC)
+    await Bun.sleep(20) // older than the trip-2 planning visit, also with coarse file timestamps
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({
+      stage: 'needs-human', resumeStage: 'planning', trip: 2, reason: `planner: docs/specs/${ID}.md was not written`,
+    })
+    expect(t.spawner.windows('planner')).toEqual(['planner', 'planner·2'])
+  })
+
+  test('a start that fails mid-group kills the agents already started', async () => {
+    const t = await setup({ stage: 'review' })
+    t.write(t.doc('specs'), SPEC)
+    t.spawner.failStart = 2
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({
+      stage: 'needs-human', resumeStage: 'review', running: [], reason: 'tmux new-window reviewer-code: no space for new pane',
+    })
+    expect(t.events).toEqual(['start reviewer-product', 'kill reviewer-product', 'gh pr view', 'gh repo view', 'gh pr edit'])
   })
 
   test('a failing push is a failure with the git error', async () => {

@@ -8,7 +8,7 @@ import { appendActivity, loadJob, saveJob, type Job } from './job'
 import { acquireLock } from './lock'
 import { isWaiting, route, type Outcome } from './machine'
 import { CLI_PATH, jobPaths, type JobPaths } from './paths'
-import { mergeStatus, renderStatus } from './prbody'
+import { mergeDecision, mergeStatus, renderStatus } from './prbody'
 import { loadRole } from './roles'
 import { shq } from './shell'
 import { readExitCode, waitForFile, type SpawnRequest } from './spawn'
@@ -128,18 +128,40 @@ function verdicts(rec: Record<string, string> = {}): string {
   return [...odd.map(([k, v]) => `${k} ${v}`), ...(odd.length < all.length ? ['others PASS'] : [])].join(', ')
 }
 
-/** The PR's status block, refreshed on every transition. Cosmetic: a failure is noted, never fatal. */
+/** The PR's status block (and an escalation's decision section), refreshed on every transition. Cosmetic: a failure is noted, never fatal. */
 async function updatePr(c: Ctx): Promise<void> {
   const pr = c.job.pr
   if (!pr) return
   try {
-    const body = await c.deps.gh.viewBody(pr)
+    const body = mergeStatus((await c.deps.gh.viewBody(pr)).trimEnd(), renderStatus(c.job, c.cfg, await docLinks(c)))
     const file = join(c.paths.jobDir, 'pr-body.md')
-    writeFileSync(file, `${mergeStatus(body.trimEnd(), renderStatus(c.job, c.cfg, await docLinks(c))).trimEnd()}\n`)
+    writeFileSync(file, `${mergeDecision(body, decision(c)).trimEnd()}\n`)
     await c.deps.gh.editBody(pr, file)
   } catch (e) {
     c.note(`PR status update failed: ${(e as Error).message}`)
   }
+}
+
+/** What an escalation pause asks the human, for the top of the PR body; null when the job isn't in one. */
+function decision(c: Ctx): string | null {
+  const job = c.job
+  if (job.stage !== 'needs-human' || job.waitingFor !== 'escalation') return null
+  const head = '## ⏸ Needs your decision'
+  const where = (file: string | null) => (file ? relative(c.repo, file) : 'the trip folder')
+  if (job.capHit === 'env') return `${head}\n\nQA environment failed twice; validators' evidence: ${where(job.reasonFile)}`
+  const file = job.questionsFile ?? job.reasonFile
+  const questions = file && existsSync(file) ? questionsOf(readFileSync(file, 'utf8')) : ''
+  return `${head}\n\n${questions || `See ${where(file)}.`}`
+}
+
+/** The body of a judge file's `## Questions` section. */
+function questionsOf(text: string): string {
+  const lines = text.split(/\r?\n/)
+  const at = lines.findIndex((l) => l.replace(/:?\s*$/, '') === '## Questions')
+  if (at < 0) return ''
+  const rest = lines.slice(at + 1)
+  const end = rest.findIndex((l) => l.startsWith('## '))
+  return (end < 0 ? rest : rest.slice(0, end)).join('\n').trim()
 }
 
 function context(repo: string, paths: JobPaths, cfg: FactoryConfig, deps: Deps, job: Job): Ctx {
@@ -216,10 +238,21 @@ async function runAgents(c: Ctx, specs: AgentSpec[]): Promise<AgentResult[]> {
   // A role or harness error fails the stage before any agent starts, so none is left running.
   for (const [i, s] of specs.entries()) if (!skipped[i]) resolveHarness(loadRole(c.deps.rolesDir, s.role), c.cfg)
   const first: (Attempt | null)[] = []
-  for (const [i, s] of specs.entries()) {
-    const r = skipped[i]
-    if (r?.ok) c.note(`skip ${s.role}: ${show(c, s.output)} is already done${r.verdict ? ` (${r.verdict})` : ''}`)
-    first.push(r ? null : await startAgent(c, s))
+  try {
+    for (const [i, s] of specs.entries()) {
+      const r = skipped[i]
+      if (r?.ok) c.note(`skip ${s.role}: ${show(c, s.output)} is already done${r.verdict ? ` (${r.verdict})` : ''}`)
+      first.push(r ? null : await startAgent(c, s))
+    }
+  } catch (e) {
+    // Never leave half a group running: stop the agents this group already started.
+    const started = first.flatMap((a) => (a ? [a.window] : []))
+    for (const w of started) {
+      await c.deps.spawner.kill(c.job.id, w)
+      c.note(`stopped ${w}: the rest of its group could not start`)
+    }
+    c.update((j) => ({ running: j.running.filter((w) => !started.includes(w)) }))
+    throw e
   }
   // allSettled: never return while an agent is still being waited on.
   const settled = await Promise.allSettled(
@@ -315,11 +348,12 @@ async function finishAgent(c: Ctx, a: Attempt): Promise<AgentResult> {
 
 function result(c: Ctx, a: Attempt): AgentResult {
   const r = inspect(c, a.spec)
-  if (a.interactive) {
-    return r.ok && !writtenThisVisit(c, a.spec.output) ? { ok: false, problem: `${show(c, a.spec.output)} was not written` } : r
-  }
+  // At a reused path, a valid file from an earlier visit is not this agent's output.
+  const stale = r.ok && REUSED.includes(a.spec.kind) && !writtenThisVisit(c, a.spec.output)
+  const checked: AgentResult = stale ? { ok: false, problem: `${show(c, a.spec.output)} was not written` } : r
+  if (a.interactive) return checked
   const code = readExitCode(a.req.doneFile)
   if (code === null) return { ok: false, problem: 'the window closed before the agent finished' }
   if (code !== 0) return { ok: false, problem: `exited with code ${code}` }
-  return r
+  return checked
 }

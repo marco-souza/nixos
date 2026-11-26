@@ -100,6 +100,31 @@ export function mergeStatus(body: string, status: string): string {
   return `${status}\n\n${body}`
 }
 
+const DECISION_START = '<!-- factory:decision -->'
+const DECISION_END = '<!-- /factory:decision -->'
+
+/** `body` without the block between `start` and `end`, joining what was around it with one blank line. */
+function cut(body: string, start: string, end: string): string {
+  const a = body.indexOf(start)
+  const b = body.indexOf(end)
+  if (a < 0 || b <= a) return body
+  const before = body.slice(0, a).trimEnd()
+  const after = body.slice(b + end.length).trimStart()
+  return before && after ? `${before}\n\n${after}` : before || after
+}
+
+/** Puts `decision` right below the status block (or on top), replacing an earlier one; null removes it. Slices, so `$` stays literal. */
+export function mergeDecision(body: string, decision: string | null): string {
+  const rest = cut(body, DECISION_START, DECISION_END)
+  if (decision === null) return rest
+  const block = `${DECISION_START}\n${decision}\n${DECISION_END}`
+  const end = rest.indexOf(END)
+  if (end < 0) return rest ? `${block}\n\n${rest}` : block
+  const at = end + END.length
+  const after = rest.slice(at).trimStart()
+  return `${rest.slice(0, at)}\n\n${block}${after ? `\n\n${after}` : ''}`
+}
+
 export function initialBody(job: Job): string {
   // The cap is only shown once a trip has started, which a fresh job has not.
   const status = renderStatus(job, { maxTrips: 0 } as FactoryConfig, {})

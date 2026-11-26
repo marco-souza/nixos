@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { realExec } from '../exec'
 import { createJob, type Job } from '../job'
 import type { FactoryConfig } from '../config'
-import { initialBody, mergeStatus, proofCoverage, pushProof, renderStatus } from '../prbody'
+import { initialBody, mergeDecision, mergeStatus, proofCoverage, pushProof, renderStatus } from '../prbody'
 import { FakeExec, tempRepo } from './helpers'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -120,6 +120,28 @@ describe('mergeStatus', () => {
   test('replacement text with $ is literal', () => {
     const s = `<!-- factory:status -->\nx $& $1\n<!-- /factory:status -->`
     expect(mergeStatus(`<!-- factory:status -->\nold\n<!-- /factory:status -->\nrest`, s)).toBe(`${s}\nrest`)
+  })
+})
+
+describe('mergeDecision', () => {
+  const status = renderStatus(job(), cfg, {})
+  const body = `${status}\n\nhello\n`
+  const D = '<!-- factory:decision -->'
+  const E = '<!-- /factory:decision -->'
+  test('goes right below the status block', () => {
+    expect(mergeDecision(body, '## Q\n- one?')).toBe(`${status}\n\n${D}\n## Q\n- one?\n${E}\n\nhello\n`)
+  })
+  test('replaces an earlier decision and null removes it', () => {
+    const once = mergeDecision(body, 'first')
+    const twice = mergeDecision(once, 'second')
+    expect(twice.split(D).length).toBe(2)
+    expect(twice).toContain('second')
+    expect(twice).not.toContain('first')
+    expect(mergeDecision(twice, null)).toBe(body)
+    expect(mergeDecision(body, null)).toBe(body)
+  })
+  test('prepends without a status block, and $ stays literal', () => {
+    expect(mergeDecision('hello\n', 'x $& $1')).toBe(`${D}\nx $& $1\n${E}\n\nhello\n`)
   })
 })
 
