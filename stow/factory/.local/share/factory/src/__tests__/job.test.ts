@@ -61,6 +61,33 @@ describe('job state', () => {
     expect(jobs[2]).toMatchObject({ legacy: true, feature: '', pr: null })
   })
 
+  test('listJobs skips a job.json that is unparseable or not an object', () => {
+    put(make('good', 1, new Date(2026, 10, 1)))
+    for (const [id, text] of [['broken', '{"id": '], ['null', 'null'], ['array', '[1]'], ['string', '"x"']]) {
+      const p = jobPaths(repo, id!)
+      mkdirSync(p.jobDir, { recursive: true })
+      writeFileSync(p.jobFile, text!)
+    }
+    expect(listJobs(repo).map((j) => j.id)).toEqual(['good'])
+  })
+
+  test('a legacy job without an id takes its folder name', () => {
+    const p = jobPaths(repo, '004-no-id')
+    mkdirSync(p.jobDir, { recursive: true })
+    writeFileSync(p.jobFile, '{"stage":"build"}')
+    expect(listJobs(repo)).toEqual([{ legacy: true, id: '004-no-id', feature: '', stage: 'build', pr: null }])
+  })
+
+  test('legacy jobs are sorted by id', () => {
+    for (const id of ['010-c', '002-a', '005-b']) {
+      const p = jobPaths(repo, id)
+      mkdirSync(p.jobDir, { recursive: true })
+      writeFileSync(p.jobFile, JSON.stringify({ id, stage: 'done' }))
+    }
+    put(make('v2', 1, new Date(2026, 10, 1)))
+    expect(listJobs(repo).map((j) => j.id)).toEqual(['v2', '002-a', '005-b', '010-c'])
+  })
+
   test('listJobs on a repo without .factory is empty', () => {
     expect(listJobs(repo)).toEqual([])
   })

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { jobPaths } from './paths'
 
 export type Stage =
@@ -99,14 +99,16 @@ export function createJob(args: { id: string; feature: string; repo: string; slo
   }
 }
 
+/** Throws when the file is not JSON or not an object. A v1 job without an id takes its folder's name. */
 export function loadJob(file: string): Job | LegacyJob {
   const raw = JSON.parse(readFileSync(file, 'utf8'))
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${file}: not a job object`)
   if (raw.version === 2) return raw as Job
   return {
     legacy: true,
-    id: raw.id,
+    id: typeof raw.id === 'string' && raw.id ? raw.id : basename(dirname(file)),
     feature: raw.feature ?? '',
-    stage: raw.stage,
+    stage: typeof raw.stage === 'string' ? raw.stage : 'unknown',
     pr: raw.pr ?? null,
   }
 }
@@ -119,17 +121,24 @@ export function saveJob(file: string, job: Job, now: Date): void {
   renameSync(tmp, file)
 }
 
+/** v2 jobs newest first, then v1 jobs by id. A job.json that can't be read is skipped. */
 export function listJobs(repo: string): (Job | LegacyJob)[] {
   const { jobsDir } = jobPaths(repo, '')
   if (!existsSync(jobsDir)) return []
   const jobs: (Job | LegacyJob)[] = []
   for (const name of readdirSync(jobsDir)) {
     const file = jobPaths(repo, name).jobFile
-    if (existsSync(file)) jobs.push(loadJob(file))
+    if (!existsSync(file)) continue
+    try {
+      jobs.push(loadJob(file))
+    } catch {
+      // A half-written or hand-edited job.json must not hide the other jobs.
+    }
   }
   const modern = jobs.filter((j): j is Job => !('legacy' in j))
   const legacy = jobs.filter((j) => 'legacy' in j)
   modern.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  legacy.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   return [...modern, ...legacy]
 }
 
