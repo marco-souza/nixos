@@ -5,14 +5,14 @@ import type { PrComment } from '../git'
 import { heldSlots, nextSlot, type Job } from '../job'
 import { CommandError } from '../machine'
 import { jobPaths } from '../paths'
-import { ok, printNext, requireJob, restartDriver, transition, type Args, type Cli } from './shared'
+import { ok, printNext, findJob, restartDriver, transition, type Args, type Cli } from './shared'
 
 /**
  * New PR comments (since the last feedback file) and `note` go to `feedback-<k>.md`; the job starts a new cycle.
  * Stops the job's agents first; a done job's PR goes back to draft, and it takes a free slot if its own was taken.
  */
 export async function feedback(repo: string, id: string, note: string | null, deps: Deps): Promise<Job> {
-  const job = requireJob(repo, id)
+  const job = findJob(repo, id)
   if (job.stage === 'discarded') throw new CommandError(`cannot send feedback: ${id} is discarded`)
   const paths = jobPaths(repo, id)
   const last = job.feedbackCount > 0 ? paths.feedback(job.feedbackCount) : null

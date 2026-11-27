@@ -57,8 +57,8 @@ which roles read first. It should say:
 In the target repo, under `.factory/` (git-excluded): `.factory/<job>/` is the
 job's worktree on branch `factory/<job>`, and `.factory/jobs/<job>/` holds the
 job state, activity log, agent logs, reviews and `pr.md`. Each job runs in the
-tmux session `factory-<job>`. Job ids look like `261126-rate-limit`. Jobs from
-the v1 skill show as legacy and are never driven.
+tmux session `factory-<job>`. Job ids look like `261126-rate-limit`. v1 jobs are
+ignored; delete their folders by hand.
 
 ## Roles
 

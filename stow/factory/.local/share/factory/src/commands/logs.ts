@@ -5,7 +5,7 @@ import { CommandError } from '../machine'
 import { jobPaths } from '../paths'
 import { createFormatter } from '../tail'
 import { paint } from '../ui'
-import { requireJob, type Args, type Cli } from './shared'
+import { findJob, type Args, type Cli } from './shared'
 
 const LAST_LINES = 200
 const FOLLOW_POLL_MS = 500
@@ -45,7 +45,7 @@ export function detectFormat(text: string): Harness {
 /** Prints the last lines of an agent's log through one formatter of its own; `-f` follows it until the agent is done. */
 export async function logsCommand(args: Args, cli: Cli, repo: string): Promise<void> {
   const [id, role] = args.pos as [string, string | undefined]
-  requireJob(repo, id)
+  findJob(repo, id)
   const paths = jobPaths(repo, id)
   const name = pickLog(paths.logsDir, role)
   if (!name) throw new CommandError(role ? `no ${role} logs for ${id}` : `no logs for ${id} yet`)

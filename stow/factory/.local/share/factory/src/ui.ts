@@ -1,5 +1,5 @@
 import { dirname, relative } from 'node:path'
-import type { Job, LegacyJob } from './job'
+import type { Job } from './job'
 import { GROUPS, STEPS } from './prbody'
 import { useColor } from './tail'
 
@@ -123,24 +123,21 @@ const WAITING_LABEL: Record<string, string> = {
 
 export const prNumber = (pr: string | null) => (pr ? `#${/\/pull\/(\d+)/.exec(pr)?.[1] ?? '?'}` : '-')
 
-/** Needs-you rows first, then running, then done or discarded, then v1 jobs. */
-function rank(j: Job | LegacyJob): number {
-  if ('legacy' in j) return 3
+/** Needs-you rows first, then running, then done or discarded. */
+function rank(j: Job): number {
   if (needsYou(j)) return 0
   return j.stage === 'done' || j.stage === 'discarded' ? 2 : 1
 }
 
 /** One row per job: `JOB  STAGE  TRIP  WAITING  PR  AGE`. */
-export function statusTable(jobs: (Job | LegacyJob)[], now: Date): string {
+export function statusTable(jobs: Job[], now: Date): string {
   const sorted = [...jobs].sort((a, b) => rank(a) - rank(b))
   const rows = sorted.map((j) => {
-    if ('legacy' in j) return { mark: false, dim: true, cells: [j.id, `v1:${j.stage}`, '-', '-', prNumber(j.pr), '-'] }
     const waiting = needsYou(j)
       ? `${WAITING_LABEL[j.waitingFor!] ?? j.waitingFor}${j.waitingSince ? ` ${ago(j.waitingSince, now)}` : ''}`
       : '-'
     return {
       mark: needsYou(j),
-      dim: false,
       cells: [j.id, j.stage, j.trip > 0 ? String(j.trip) : '-', waiting, prNumber(j.pr), ago(j.createdAt, now)],
     }
   })
@@ -149,9 +146,7 @@ export function statusTable(jobs: (Job | LegacyJob)[], now: Date): string {
   const line = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i]!)).join('  ').trimEnd()
   const out = [`  ${paint('bold', line(header))}`]
   for (const r of rows) {
-    const text = line(r.cells)
-    if (r.dim) out.push(paint('dim', `  ${text}`))
-    else out.push(`${r.mark ? paint('gold', '●') : ' '} ${text}`)
+    out.push(`${r.mark ? paint('gold', '●') : ' '} ${line(r.cells)}`)
   }
   return out.join('\n')
 }

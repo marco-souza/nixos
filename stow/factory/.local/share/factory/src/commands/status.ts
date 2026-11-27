@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { listJobs, type Job, type LegacyJob } from '../job'
+import { listJobs, type Job } from '../job'
 import { jobPaths } from '../paths'
 import { needsYou, nextHint, nextLines, paint, pipelineLine, statusTable, whatFor } from '../ui'
 import { findJob, type Args, type Cli } from './shared'
@@ -21,14 +21,13 @@ export async function statusCommand(args: Args, cli: Cli, repo: string): Promise
   }
   cli.out(statusTable(jobs, cli.deps(repo).now()))
   // What to type for each job that needs the human, in table order.
-  const hints = jobs.flatMap((j) => ('legacy' in j || !needsYou(j) ? [] : [nextHint(j)!]))
+  const hints = jobs.flatMap((j) => (needsYou(j) ? [nextHint(j)!] : []))
   if (hints.length) cli.out(['', ...hints.flatMap(nextLines)].join('\n'))
 }
 
 /** One job: header, pipeline, what it needs, running agents, recent activity, next step. */
-function detail(repo: string, job: Job | LegacyJob): string {
+function detail(repo: string, job: Job): string {
   const title = `${paint('bold', job.id)}${job.feature ? `  ${job.feature}` : ''}`
-  if ('legacy' in job) return `${title}\n${paint('dim', `v1:${job.stage} · a v1 job; v2 cannot drive it`)}`
   const facts = [job.stage, `cycle ${job.cycle}`, ...(job.trip > 0 ? [`trip ${job.trip}`] : []), ...(job.pr ? [job.pr] : [])]
   const sections = [[title, facts.join(' · '), pipelineLine(job)]]
   const why = whatFor(job)

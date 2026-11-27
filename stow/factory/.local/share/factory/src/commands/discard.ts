@@ -5,14 +5,14 @@ import type { Job } from '../job'
 import { applyCommand, CommandError } from '../machine'
 import { jobPaths } from '../paths'
 import { prNumber } from '../ui'
-import { failed, ok, requireJob, transition, type Args, type Cli } from './shared'
+import { failed, ok, findJob, transition, type Args, type Cli } from './shared'
 
 /**
  * Stops the session, removes the worktree, closes the PR, deletes the branch and the proof branch, and marks the job
  * discarded. Each step is best effort: a failure is printed and the rest still runs. The job folder stays.
  */
 export async function discard(repo: string, id: string, deps: Deps): Promise<Job> {
-  const job = requireJob(repo, id)
+  const job = findJob(repo, id)
   // Refuses an already discarded job before touching anything.
   applyCommand(job, { kind: 'discard' }, deps.now())
   const attempt = async (name: string, fn: () => Promise<void>) => {
@@ -38,7 +38,7 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
 
 export async function discardCommand(args: Args, cli: Cli, repo: string): Promise<number | void> {
   const id = args.pos[0]!
-  const job = requireJob(repo, id)
+  const job = findJob(repo, id)
   if (args.flags.yes !== true && args.flags.y !== true) {
     // Agents run commands without a terminal: no one there could have said yes.
     if (!cli.terminal.tty) throw new CommandError(`refusing to discard ${id} without --yes (no terminal to confirm)`)

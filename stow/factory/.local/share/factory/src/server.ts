@@ -8,7 +8,7 @@ import { retry } from './commands/run'
 import { findJob, JOB_ID } from './commands/shared'
 import { loadConfig } from './config'
 import type { Deps } from './deps'
-import { listJobs, type Job, type LegacyJob } from './job'
+import { listJobs, type Job } from './job'
 import { acquireLock, LockError } from './lock'
 import { CommandError } from './machine'
 import { jobPaths, PACKAGE_DIR } from './paths'
@@ -75,15 +75,15 @@ function tripFolders(jobDir: string): { trip: number; files: string[] }[] {
     }))
 }
 
-/** The v1 or v2 job, or a 404. */
-function lookup(repo: string, id: string): { job: Job | LegacyJob; worktree: string } {
+/** The job, or a 404. */
+function lookup(repo: string, id: string): { job: Job; worktree: string } {
   let job
   try {
     job = findJob(repo, id)
   } catch (e) {
     throw new HttpError(404, (e as Error).message)
   }
-  return { job, worktree: 'legacy' in job ? jobPaths(repo, id).worktree : job.worktree }
+  return { job, worktree: job.worktree }
 }
 
 function jobDetail(repo: string, id: string) {
@@ -161,7 +161,7 @@ async function readNote(req: Request): Promise<string | null> {
 
 /** Throws LockError when a live driver holds the job's lock: a second driver would refuse to start. */
 function requireNoDriver(repo: string, id: string): void {
-  if ('legacy' in lookup(repo, id).job) return
+  lookup(repo, id)
   acquireLock(jobPaths(repo, id).jobDir)()
 }
 
@@ -210,9 +210,7 @@ export function startServer(
     if (parts.length === 2) {
       get()
       // The page shows the CLI's own words and step table, so the three never drift apart.
-      const jobs = listJobs(repo).map((j) =>
-        'legacy' in j ? { ...j, hint: null, whatFor: null } : { ...j, hint: nextHint(j), whatFor: whatFor(j) },
-      )
+      const jobs = listJobs(repo).map((j) => ({ ...j, hint: nextHint(j), whatFor: whatFor(j) }))
       const limits = { maxTrips: loadConfig(repo).maxTrips }
       return json({ project, jobs, now: deps.now().toISOString(), limits, steps: STEPS })
     }

@@ -616,7 +616,7 @@ describe('runJob', () => {
   test('v1 job refuses to run', async () => {
     const t = await setup()
     writeFileSync(t.paths.jobFile, JSON.stringify({ id: ID, feature: 'old', stage: 'review' }))
-    await expect(t.run()).rejects.toThrow(`${ID} is a v1 job; v2 cannot drive it`)
+    await expect(t.run()).rejects.toThrow('not a factory v2 job')
     expect(existsSync(join(t.paths.jobDir, 'driver.lock'))).toBe(false)
     expect(t.spawner.requests).toEqual([])
   })

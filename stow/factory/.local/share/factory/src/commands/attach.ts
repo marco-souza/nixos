@@ -1,6 +1,6 @@
 import type { Exec } from '../exec'
 import { CommandError } from '../machine'
-import { requireJob, type Args, type Cli, type Terminal } from './shared'
+import { findJob, type Args, type Cli, type Terminal } from './shared'
 
 export const realTerminal: Terminal = {
   get tmux() {
@@ -39,7 +39,7 @@ export async function enterSession(id: string, exec: Exec, term: Terminal): Prom
 
 export async function attachCommand(args: Args, cli: Cli, repo: string): Promise<void> {
   const id = args.pos[0]!
-  requireJob(repo, id)
+  findJob(repo, id)
   const { exec } = cli.deps(repo)
   if (!(await hasSession(exec, id))) throw new CommandError(`no tmux session factory-${id} (start the driver: factory run ${id})`)
   if (!(await enterSession(id, exec, cli.terminal))) throw new CommandError(`not a terminal; run: tmux attach -t factory-${id}`)

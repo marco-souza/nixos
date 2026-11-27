@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, appendFileSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { dirname } from 'node:path'
 import { jobPaths } from './paths'
 
 export type Stage =
@@ -56,15 +56,6 @@ export interface Job {
   updatedAt: string
 }
 
-/** A job written by factory v1: shown, never driven. */
-export interface LegacyJob {
-  legacy: true
-  id: string
-  feature: string
-  stage: string
-  pr: string | null
-}
-
 export function createJob(args: { id: string; feature: string; repo: string; slot: number; now: Date }): Job {
   const at = args.now.toISOString()
   return {
@@ -102,18 +93,11 @@ export function createJob(args: { id: string; feature: string; repo: string; slo
   }
 }
 
-/** Throws when the file is not JSON or not an object. A v1 job without an id takes its folder's name. */
-export function loadJob(file: string): Job | LegacyJob {
+/** Throws when the file is not JSON or not a v2 job. */
+export function loadJob(file: string): Job {
   const raw = JSON.parse(readFileSync(file, 'utf8'))
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${file}: not a job object`)
-  if (raw.version === 2) return { ...raw, stoppedReason: raw.stoppedReason ?? null } as Job
-  return {
-    legacy: true,
-    id: typeof raw.id === 'string' && raw.id ? raw.id : basename(dirname(file)),
-    feature: raw.feature ?? '',
-    stage: typeof raw.stage === 'string' ? raw.stage : 'unknown',
-    pr: raw.pr ?? null,
-  }
+  if (raw?.version !== 2) throw new Error(`${file}: not a factory v2 job`)
+  return { ...raw, stoppedReason: raw.stoppedReason ?? null }
 }
 
 export function saveJob(file: string, job: Job, now: Date): void {
@@ -124,11 +108,11 @@ export function saveJob(file: string, job: Job, now: Date): void {
   renameSync(tmp, file)
 }
 
-/** v2 jobs newest first, then v1 jobs by id. A job.json that can't be read is skipped. */
-export function listJobs(repo: string): (Job | LegacyJob)[] {
+/** Newest first. A job.json that can't be read, or isn't v2, is skipped. */
+export function listJobs(repo: string): Job[] {
   const { jobsDir } = jobPaths(repo, '')
   if (!existsSync(jobsDir)) return []
-  const jobs: (Job | LegacyJob)[] = []
+  const jobs: Job[] = []
   for (const name of readdirSync(jobsDir)) {
     const file = jobPaths(repo, name).jobFile
     if (!existsSync(file)) continue
@@ -138,11 +122,7 @@ export function listJobs(repo: string): (Job | LegacyJob)[] {
       // A half-written or hand-edited job.json must not hide the other jobs.
     }
   }
-  const modern = jobs.filter((j): j is Job => !('legacy' in j))
-  const legacy = jobs.filter((j) => 'legacy' in j)
-  modern.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  legacy.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  return [...modern, ...legacy]
+  return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export function appendActivity(file: string, line: string, now: Date): void {
@@ -151,11 +131,11 @@ export function appendActivity(file: string, line: string, now: Date): void {
   appendFileSync(file, `${hms} ${line}\n`)
 }
 
-/** Slots held by jobs that are still alive (not done or discarded). Legacy jobs never hold one. */
+/** Slots held by jobs that are still alive (not done or discarded). */
 export function heldSlots(repo: string): Set<number> {
   const used = new Set<number>()
   for (const j of listJobs(repo)) {
-    if ('legacy' in j || j.stage === 'done' || j.stage === 'discarded') continue
+    if (j.stage === 'done' || j.stage === 'discarded') continue
     used.add(j.slot)
   }
   return used

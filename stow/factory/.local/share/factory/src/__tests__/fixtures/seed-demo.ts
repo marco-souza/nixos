@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Seeds a demo repo for the dashboard: one job per waiting state, jobs mid-discovery, mid-build, mid-validation,
- * done and discarded, and one v1 job, with docs, trip files, logs and activity. Times are relative to now.
+ * done and discarded, with docs, trip files, logs and activity. Times are relative to now.
  *
  *   bun src/__tests__/fixtures/seed-demo.ts /tmp/factory-demo
  *
@@ -504,11 +504,7 @@ async function main(): Promise<void> {
   }
   rmSync(join(repo, '.factory'), { recursive: true, force: true })
   const jobs = seeds().map((s, i) => seed(repo, s, i + 1))
-  // A v1 job: no `version`, a v1 stage. Shown as legacy, never driven.
-  const v1 = jobPaths(repo, '251102-wishlist')
-  write(v1.jobFile, JSON.stringify({ id: '251102-wishlist', feature: 'Wishlist for signed-in shoppers', stage: 'team-review', pr: PR(31), round: 2 }, null, 2))
-  write(v1.activityLog, '10:02:11 review round 2: APPROVE\n10:05:40 team-review: waiting for 2 approvals')
-  console.log(`seeded ${jobs.length} jobs and 1 v1 job in ${repo}`)
+  console.log(`seeded ${jobs.length} jobs in ${repo}`)
 }
 
 await main()

@@ -129,7 +129,7 @@ describe('dashboard server', () => {
     }
     expect(byId(ID).whatFor).toBe('Review the PR')
     expect(byId('261126-build')).toMatchObject({ whatFor: null, hint: 'factory attach 261126-build to watch' })
-    expect(byId('old-job')).toMatchObject({ legacy: true, hint: null, whatFor: null })
+    expect(byId('old-job')).toBeUndefined()
   })
 
   test('the trip cap comes from the repo config', async () => {
@@ -138,15 +138,14 @@ describe('dashboard server', () => {
     expect(((await (await t.get('/api/jobs')).json()) as any).limits).toEqual({ maxTrips: 5 })
   })
 
-  test('lists jobs including legacy', async () => {
+  test('lists jobs, skipping v1 jobs', async () => {
     const t = await setup()
     const res = await t.get('/api/jobs')
     expect(res.headers.get('cache-control')).toBe('no-store')
-    const body = (await res.json()) as { project: string; jobs: { id: string; legacy?: boolean; stage: string }[]; now: string }
+    const body = (await res.json()) as { project: string; jobs: { id: string; stage: string }[]; now: string }
     expect(body.project).toMatch(/^factory-server-/)
     expect(body.now).toBe(NOW.toISOString())
-    expect(body.jobs.map((j) => j.stage).sort()).toEqual([...STAGES, 'build'].sort())
-    expect(body.jobs.filter((j) => j.legacy).map((j) => j.id)).toEqual(['old-job'])
+    expect(body.jobs.map((j) => j.stage).sort()).toEqual([...STAGES].sort())
   })
 
   test('job detail lists docs, trips, logs and activity', async () => {
@@ -332,11 +331,11 @@ describe('dashboard server', () => {
       expect(t.spawner.calls).toContainEqual(['killSession', ID])
     })
 
-    test('a legacy job cannot be driven', async () => {
+    test('a v1 job is not found', async () => {
       const t = await setup()
       const res = await t.post('/api/jobs/old-job/approve')
-      expect(res.status).toBe(400)
-      expect(((await res.json()) as { error: string }).error).toContain('v1 job')
+      expect(res.status).toBe(404)
+      expect(((await res.json()) as { error: string }).error).toContain('not a factory v2 job')
     })
 
     test('GET on an action and POST on a read route are 405', async () => {

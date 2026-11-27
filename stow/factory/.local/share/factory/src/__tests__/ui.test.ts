@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createJob, type Job, type LegacyJob } from '../job'
+import { createJob, type Job } from '../job'
 import { ago, nextHint, nextLines, paint, pipelineLine, statusTable, whatFor } from '../ui'
 
 const saved = { NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR }
@@ -24,8 +24,6 @@ function job(id: string, over: Partial<Job> = {}): Job {
 const running = (id: string, over: Partial<Job> = {}) =>
   job(id, { stage: 'build', waitingFor: null, waitingSince: null, planned: true, trip: 1, pr: 'https://github.com/o/r/pull/7', ...over })
 
-const legacy: LegacyJob = { legacy: true, id: '003-old-thing', feature: 'old', stage: 'review', pr: null }
-
 describe('statusTable', () => {
   const jobs = [
     running('261126-csv-export'),
@@ -34,7 +32,6 @@ describe('statusTable', () => {
       pr: 'https://github.com/o/r/pull/12',
     }),
     job('261125-done', { stage: 'done', waitingFor: null, waitingSince: null, pr: 'https://github.com/o/r/pull/3' }),
-    legacy,
     job('261124-broken', {
       stage: 'needs-human', waitingFor: 'failure', waitingSince: '2026-11-26T11:57:00Z', trip: 2, reason: 'x',
       createdAt: '2026-11-22T12:00:00Z',
@@ -45,7 +42,7 @@ describe('statusTable', () => {
     const lines = statusTable(jobs, NOW).split('\n')
     expect(lines[0]).toMatch(/^ {2}JOB +STAGE +TRIP +WAITING +PR +AGE$/)
     expect(lines.slice(1).map((l) => l.split(/\s+/).filter(Boolean)[l.startsWith('●') ? 1 : 0])).toEqual([
-      '261126-rate-limit', '261124-broken', '261126-csv-export', '261125-done', '003-old-thing',
+      '261126-rate-limit', '261124-broken', '261126-csv-export', '261125-done',
     ])
     expect(lines[1]).toStartWith('● 261126-rate-limit')
     expect(lines[2]).toStartWith('● 261124-broken')
@@ -57,14 +54,6 @@ describe('statusTable', () => {
     expect(lines[1].split(/\s{2,}/)).toEqual(['● 261126-rate-limit', 'human-review', '1', 'review 2h', '#12', '3h'])
     expect(lines[2].split(/\s{2,}/)).toEqual(['● 261124-broken', 'needs-human', '2', 'failure 3m', '-', '4d'])
     expect(lines[3].split(/\s{2,}/)).toEqual(['', '261126-csv-export', 'build', '1', '-', '#7', '3h'])
-  })
-
-  test('a legacy row shows v1:<stage> and is dim', () => {
-    const row = statusTable([legacy], NOW).split('\n')[1]
-    expect(row.split(/\s{2,}/)).toEqual(['', '003-old-thing', 'v1:review', '-', '-', '-', '-'])
-    process.env.FORCE_COLOR = '1'
-    const colored = statusTable([legacy], NOW).split('\n')[1]
-    expect(colored).toStartWith('\x1b[2m')
   })
 
   test('columns line up', () => {
@@ -168,7 +157,7 @@ describe('whatFor', () => {
 describe('paint', () => {
   test('NO_COLOR: no escape codes anywhere', () => {
     const j = job('261126-x', { stage: 'human-review', waitingFor: 'human-review' })
-    const out = [paint('gold', 'x'), statusTable([j, legacy], NOW), pipelineLine(j)].join('\n')
+    const out = [paint('gold', 'x'), statusTable([j], NOW), pipelineLine(j)].join('\n')
     expect(out).not.toContain('\x1b[')
   })
 

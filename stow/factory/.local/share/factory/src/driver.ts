@@ -43,7 +43,6 @@ export async function runJob(repo: string, id: string, deps: Deps): Promise<'wai
   const release = acquireLock(paths.jobDir)
   try {
     const job = loadJob(paths.jobFile)
-    if ('legacy' in job) throw new Error(`${id} is a v1 job; v2 cannot drive it`)
     const c = context(repo, paths, loadConfig(repo), deps, job)
     await stopLeftovers(c)
     let moved = false

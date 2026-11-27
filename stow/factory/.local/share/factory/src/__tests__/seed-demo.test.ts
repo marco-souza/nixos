@@ -33,7 +33,7 @@ describe('seed-demo', () => {
     const dir = join(await tempDir(), 'demo')
     expect(seed(dir).exitCode).toBe(0)
     expect(existsSync(join(dir, '.factory-demo'))).toBe(true)
-    expect(existsSync(join(dir, '.factory', 'jobs', '251102-wishlist', 'job.json'))).toBe(true)
+    expect(existsSync(join(dir, '.factory', 'jobs'))).toBe(true)
     expect(seed(dir).exitCode).toBe(0)
   })
 })

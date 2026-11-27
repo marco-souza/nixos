@@ -487,9 +487,9 @@ describe('run', () => {
     mkdirSync(join(t.repo, '.factory/jobs/003-old'), { recursive: true })
     writeFileSync(join(t.repo, '.factory/jobs/003-old/job.json'), '{"id":"003-old","stage":"review"}')
     expect(await t.run('run', '003-old')).toBe(1)
-    expect(t.err).toEqual(['factory: 003-old is a v1 job; v2 cannot drive it'])
+    expect(t.err.at(-1)).toContain('not a factory v2 job')
     expect(await t.run('run', '003-old', '--here')).toBe(1)
-    expect(t.err.at(-1)).toBe('factory: 003-old is a v1 job; v2 cannot drive it')
+    expect(t.err.at(-1)).toContain('not a factory v2 job')
   })
 })
 

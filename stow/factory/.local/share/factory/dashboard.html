@@ -222,7 +222,7 @@
   .card:hover { background: var(--card-hover); }
   .card:focus-visible, .ticket:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
   .card.final { box-shadow: none; }
-  .card.discarded, .card.legacy { background: transparent; }
+  .card.discarded { background: transparent; }
   .card.discarded .feature { text-decoration: line-through; text-decoration-color: var(--faint); color: var(--muted); }
   .card .feature { margin: 4px 0 8px; font: 600 14.5px/1.32 var(--display); letter-spacing: -0.005em; overflow-wrap: anywhere; }
   .card-top { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
@@ -231,7 +231,6 @@
     padding: 1px 6px; border-radius: 4px; font-size: 11.5px; line-height: 1.5; white-space: nowrap;
     color: var(--muted); background: color-mix(in oklab, var(--faint) 14%, transparent);
   }
-  .badge.v1 { color: var(--text); background: color-mix(in oklab, var(--faint) 24%, transparent); }
   .note { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
 
   /* The step strip: the steps of the job's stage group. */
@@ -691,9 +690,8 @@ const columns = () => [...groups(), 'Done'].map((label) => {
   return { key, label, empty: EMPTY[key] ?? `Nothing in ${key}` }
 })
 
-const isLegacy = (j) => j.legacy === true
 /** Waits on the human: the grill, PR review, an escalation or a failure (ui.ts needsYou). */
-const needsYou = (j) => !isLegacy(j) && j.waitingFor !== null && j.stage !== 'done' && j.stage !== 'discarded'
+const needsYou = (j) => j.waitingFor !== null && j.stage !== 'done' && j.stage !== 'discarded'
 const stepOf = (stage) => steps().find((s) => s.stage === stage)
 const currentStage = (j) => (j.stage === 'needs-human' ? j.resumeStage : j.stage)
 const lastTrip = (j) => (j.trips && j.trips.length ? j.trips[j.trips.length - 1] : null)
@@ -709,7 +707,7 @@ function jobRel(j, file) {
 const judgeFile = (j) => j.questionsFile ?? j.reasonFile
 
 function column(j) {
-  if (isLegacy(j) || j.stage === 'done' || j.stage === 'discarded') return 'done'
+  if (j.stage === 'done' || j.stage === 'discarded') return 'done'
   return (stepOf(j.stage)?.group ?? groups()[0] ?? 'done').toLowerCase()
 }
 
@@ -825,7 +823,7 @@ function noticeChanges(jobs) {
     const was = prev.get(j.id)
     const needs = needsYou(j)
     prev.set(j.id, { stage: j.stage, needs })
-    if (first || isLegacy(j)) continue
+    if (first) continue
     if (!was) toast({ title: `New job ${j.id}`, text: j.feature, id: j.id })
     else if (was.stage !== j.stage) {
       if (needs) toast({ title: `${j.id} needs you`, text: needText(j), kind: 'human', id: j.id })
@@ -910,7 +908,6 @@ function hintLine(hint) {
 }
 
 function badges(j) {
-  if (isLegacy(j)) return [h('span', { class: 'badge v1' }, 'v1')]
   return [
     j.cycle > 1 ? h('span', { class: 'badge', title: `Cycle ${j.cycle}: feedback #${j.feedbackCount}` }, `cycle ${j.cycle}`) : null,
     j.trip > 0 ? h('span', { class: 'badge', title: 'Build trip in this cycle, of the cap' }, tripLabel(j)) : null,
@@ -981,17 +978,15 @@ function agents(j) {
 }
 
 function links(j) {
-  const out = [j.pr ? extLink(j.pr, `PR ${prNumber(j.pr)}`) : null, !isLegacy(j) && j.qaUrl ? extLink(j.qaUrl, 'QA env') : null].filter(Boolean)
+  const out = [j.pr ? extLink(j.pr, `PR ${prNumber(j.pr)}`) : null, j.qaUrl ? extLink(j.qaUrl, 'QA env') : null].filter(Boolean)
   return out.length ? h('div', { class: 'links' }, out) : null
 }
 
 function boardCard(j) {
-  const legacy = isLegacy(j)
-  const final = legacy || j.stage === 'done' || j.stage === 'discarded'
-  const cls = `card c-${legacy ? 'done' : column(j)}${final ? ' final' : ''}${legacy ? ' legacy' : ''}${j.stage === 'discarded' ? ' discarded' : ''}`
+  const final = j.stage === 'done' || j.stage === 'discarded'
+  const cls = `card c-${column(j)}${final ? ' final' : ''}${j.stage === 'discarded' ? ' discarded' : ''}`
   let body
-  if (legacy) body = h('p', { class: 'note' }, `Factory v1 job, stage ${j.stage}. Shown, never driven.`)
-  else if (j.stage === 'done') body = h('p', { class: 'note' }, j.ready === false ? 'PR left as a draft' : 'PR ready for review')
+  if (j.stage === 'done') body = h('p', { class: 'note' }, j.ready === false ? 'PR left as a draft' : 'PR ready for review')
   else if (j.stage === 'discarded') body = h('p', { class: 'note' }, 'Discarded')
   else body = [strip(j), chips(j), agents(j)]
   return h('article', { class: cls, tabindex: '0', dataset: { card: j.id, focus: 'card' }, 'aria-label': `${j.id}: ${j.feature}` },
@@ -1124,14 +1119,13 @@ function toggleArchived() {
   render()
 }
 
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 function render() {
   const focus = rememberFocus()
   const jobs = state.jobs
   const waiting = jobs.filter(needsYou).sort((a, b) => (a.waitingSince ?? '').localeCompare(b.waitingSince ?? ''))
-  const running = jobs.filter((j) => !isLegacy(j) && !needsYou(j) && j.stage !== 'done' && j.stage !== 'discarded')
-  const done = jobs.filter((j) => j.stage === 'done' && !isLegacy(j))
+  const running = jobs.filter((j) => !needsYou(j) && j.stage !== 'done' && j.stage !== 'discarded')
+  const done = jobs.filter((j) => j.stage === 'done')
 
   $('counts').replaceChildren(
     h('span', { class: waiting.length ? 'you' : '' }, h('b', {}, String(waiting.length)), waiting.length === 1 ? ' needs you' : ' need you'),
@@ -1161,20 +1155,17 @@ function renderBoard(jobs) {
   for (const j of jobs) if (!needsYou(j)) (byCol[column(j)] ?? byCol.done).push(j)
   for (const c of columns()) {
     const all = byCol[c.key]
-    const main = c.key === 'done' ? all.filter((j) => !isLegacy(j) && j.stage === 'done') : all
+    const main = c.key === 'done' ? all.filter((j) => j.stage === 'done') : all
     const cards = main.map(card)
     cols[c.key].n.textContent = String(main.length)
     reconcile(cols[c.key].list, cards.length ? cards : [cached(`empty:${c.key}`, '', () => h('p', { class: 'empty' }, c.empty))])
   }
 
-  // Done hides discarded and v1 jobs behind a toggle.
-  const archived = byCol.done.filter((j) => isLegacy(j) || j.stage === 'discarded')
+  // Done hides discarded jobs behind a toggle.
+  const archived = byCol.done.filter((j) => j.stage === 'discarded')
   const { more, archived: box } = cols.done
   more.hidden = !archived.length
-  const nDiscarded = archived.filter((j) => !isLegacy(j)).length
-  const nV1 = archived.length - nDiscarded
-  const what = [nDiscarded ? `${nDiscarded} discarded` : null, nV1 ? plural(nV1, 'v1 job', 'v1 jobs') : null].filter(Boolean).join(' and ')
-  more.textContent = `${showArchived ? 'Hide' : 'Show'} ${what}`
+  more.textContent = `${showArchived ? 'Hide' : 'Show'} ${archived.length} discarded`
   more.setAttribute('aria-expanded', String(showArchived && archived.length > 0))
   box.hidden = !showArchived || !archived.length
   reconcile(box, archived.map(card))
@@ -1367,12 +1358,9 @@ function renderDrawerHead() {
   $('d-top').replaceChildren(h('span', { class: 'id' }, j.id), ...badges(j).filter(Boolean))
   $('d-title').textContent = j.feature || 'No feature text'
   const meta = []
-  if (isLegacy(j)) meta.push(h('span', { class: 'where' }, `Factory v1 job, stage ${j.stage}. v2 shows it but never drives it.`))
-  else {
-    const you = needsYou(j)
-    meta.push(h('span', { class: `where${you ? ' you' : ''}` }, you ? `Needs you: ${needText(j)}` : `${stageLabel(j)}${counter(j)}`))
-    meta.push(h('span', { class: 'mono' }, j.branch))
-  }
+  const you = needsYou(j)
+  meta.push(h('span', { class: `where${you ? ' you' : ''}` }, you ? `Needs you: ${needText(j)}` : `${stageLabel(j)}${counter(j)}`))
+  meta.push(h('span', { class: 'mono' }, j.branch))
   const l = links(j)
   if (l) meta.push(...l.children)
   $('d-meta').replaceChildren(...meta)
@@ -1644,7 +1632,7 @@ document.addEventListener('keydown', (e) => {
     case 'a':
       if (!job) return
       if (needsYou(job) && need(job).actions.includes('approve')) act(job.id, 'approve')
-      else toast({ title: 'Nothing to approve', text: `${job.id} is ${isLegacy(job) ? 'a v1 job' : `in ${job.stage}`}` })
+      else toast({ title: 'Nothing to approve', text: `${job.id} is in ${job.stage}` })
       break
     case 'f':
       if (!job) return

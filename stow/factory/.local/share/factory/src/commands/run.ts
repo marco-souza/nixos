@@ -3,7 +3,7 @@ import { runJob } from '../driver'
 import type { Job } from '../job'
 import { CommandError } from '../machine'
 import { hasTmux } from './attach'
-import { fail, ok, printNext, requireJob, restartDriver, transition, type Args, type Cli } from './shared'
+import { fail, ok, printNext, findJob, restartDriver, transition, type Args, type Cli } from './shared'
 
 /** Retries the step a `needs-human` job failed (one more trip at the trip cap) and restarts the driver. */
 export async function retry(repo: string, id: string, deps: Deps): Promise<Job> {
@@ -19,7 +19,7 @@ export async function retry(repo: string, id: string, deps: Deps): Promise<Job> 
  */
 export async function runCommand(args: Args, cli: Cli, repo: string): Promise<number | void> {
   const id = args.pos[0]!
-  let job = requireJob(repo, id)
+  let job = findJob(repo, id)
   if (args.flags.here === true) return drive(repo, id, cli.deps(repo, { inline: false }), cli)
   const inline = args.flags.inline === true
   const deps = cli.deps(repo, { inline })
