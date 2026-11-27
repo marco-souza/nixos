@@ -72,9 +72,10 @@ Some choices aren't yours. They go to the human:
   points included): what users see and are told, data kept or deleted, who has
   access, failure or empty input, money, public copy.
 
-Never ask what the requirements' Decisions already answer. After the human
-answers, you run again with their answers in Decisions: design for what they
-chose.
+Never ask what the requirements' Decisions already answer. If the repo
+already has a convention for it, follow it and record it under Decided without
+asking instead of asking. After the human answers, you run again with their
+answers in Decisions: design for what they chose.
 
 This section decides where the job goes. With questions, the human answers
 them before anything else runs. With `None`, the docs go to review. So:

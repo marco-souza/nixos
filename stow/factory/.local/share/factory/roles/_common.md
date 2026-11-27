@@ -33,6 +33,11 @@ Run commands from the worktree and read and search under it. The job folder,
 the Inputs and some Outputs are outside it: use their absolute paths. Change
 nothing outside the worktree except your Output file.
 
+The job's branch starts from the repo's base branch: the `base` field of
+`.factory.json` at the worktree root, or `main` when there is none. The
+branch's own work is what `git log origin/<base>..HEAD` and
+`git diff origin/<base>...HEAD` show.
+
 ## Read first
 
 1. `AGENTS.md` (or `CLAUDE.md`) at the worktree root, and any doc it says to
@@ -84,7 +89,7 @@ nothing outside the worktree except your Output file.
   them literally: a renamed, bolded or missing heading, or anything extra on a
   verdict line, fails the run.
 - Write it once, complete, when your work is done. Then stop. Don't summarize
-  in the chat; only the file is read.
+  in the chat; only the file is read (not for interactive roles).
 
 ## When you are blocked
 
