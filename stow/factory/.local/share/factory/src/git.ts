@@ -126,6 +126,11 @@ function parseConcatenatedArrays(text: string): any[] {
   return out
 }
 
+/** CI, linters and review bots comment too; only people send feedback. */
+function isBot(user: { login?: string; type?: string } | null | undefined): boolean {
+  return Boolean(user?.login?.endsWith('[bot]')) || user?.type === 'Bot'
+}
+
 export class GitHub {
   constructor(private exec: Exec, private repo: string) {}
 
@@ -187,13 +192,13 @@ export class GitHub {
       (await this.gh(['api', `repos/{owner}/{repo}/pulls/${number}/comments`, '--paginate'])).stdout,
     )
     const all: PrComment[] = [
-      ...(view.comments ?? []).map((c: any) => ({
+      ...(view.comments ?? []).filter((c: any) => !isBot(c.author)).map((c: any) => ({
         author: c.author?.login ?? '', body: c.body ?? '', path: null, line: null, createdAt: c.createdAt,
       })),
-      ...(view.reviews ?? []).map((c: any) => ({
+      ...(view.reviews ?? []).filter((c: any) => !isBot(c.author)).map((c: any) => ({
         author: c.author?.login ?? '', body: c.body ?? '', path: null, line: null, createdAt: c.submittedAt,
       })),
-      ...inline.map((c: any) => ({
+      ...inline.filter((c: any) => !isBot(c.user)).map((c: any) => ({
         author: c.user?.login ?? '', body: c.body ?? '', path: c.path ?? null, line: c.line ?? null,
         createdAt: c.created_at,
       })),

@@ -187,6 +187,35 @@ describe('GitHub', () => {
     expect(all).toHaveLength(5)
   })
 
+  test('commentsSince skips bots: a [bot] login, or a user of type Bot', async () => {
+    const at = '2026-01-02T00:00:00Z'
+    const exec = new FakeExec([
+      {
+        match: ['gh', 'pr', 'view'],
+        result: {
+          stdout: JSON.stringify({
+            comments: [
+              { author: { login: 'github-actions[bot]' }, body: 'CI passed', createdAt: at },
+              { author: { login: 'alice' }, body: 'human', createdAt: at },
+            ],
+            reviews: [{ author: { login: 'coderabbitai[bot]' }, body: 'LGTM', submittedAt: at }],
+          }),
+        },
+      },
+      {
+        match: ['gh', 'api'],
+        result: {
+          stdout: JSON.stringify([
+            { user: { login: 'linter', type: 'Bot' }, body: 'style', path: 'x.ts', line: 1, created_at: at },
+            { user: { login: 'bob', type: 'User' }, body: 'nit', path: 'x.ts', line: 2, created_at: at },
+          ]),
+        },
+      },
+    ])
+    const got = await new GitHub(exec, '/r').commentsSince('https://github.com/o/r/pull/9', null)
+    expect(got.map((c) => c.author)).toEqual(['alice', 'bob'])
+  })
+
   test('simple wrappers build the expected argv', async () => {
     const exec = new FakeExec([
       { match: ['gh', 'repo', 'view'], result: { stdout: 'o/r\n' } },
