@@ -2,14 +2,14 @@ import { existsSync, statSync, writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import type { Deps } from '../deps'
 import type { PrComment } from '../git'
-import type { Job } from '../job'
+import { heldSlots, nextSlot, type Job } from '../job'
 import { CommandError } from '../machine'
 import { jobPaths } from '../paths'
 import { ok, printNext, requireJob, restartDriver, transition, type Args, type Cli } from './shared'
 
 /**
  * New PR comments (since the last feedback file) and `note` go to `feedback-<k>.md`; the job starts a new cycle.
- * Stops the job's agents first; a done job's PR goes back to draft.
+ * Stops the job's agents first; a done job's PR goes back to draft, and it takes a free slot if its own was taken.
  */
 export async function feedback(repo: string, id: string, note: string | null, deps: Deps): Promise<Job> {
   const job = requireJob(repo, id)
@@ -28,7 +28,9 @@ export async function feedback(repo: string, id: string, note: string | null, de
   await deps.spawner.kill(id, 'driver')
   await deps.spawner.killAgents(id)
   if (job.stage === 'done' && job.pr) await deps.gh.toDraft(job.pr)
-  const next = transition(repo, id, { kind: 'feedback', file }, deps, { running: [] })
+  // A done job holds no slot, so another job may have its ports by now.
+  const slot = job.stage === 'done' && heldSlots(repo).has(job.slot) ? nextSlot(repo) : job.slot
+  const next = transition(repo, id, { kind: 'feedback', file }, deps, { running: [], slot })
   await restartDriver(next, deps)
   return next
 }

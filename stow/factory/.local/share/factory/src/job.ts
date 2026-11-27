@@ -148,13 +148,19 @@ export function appendActivity(file: string, line: string, now: Date): void {
   appendFileSync(file, `${hms} ${line}\n`)
 }
 
-/** Lowest slot >= 1 not held by a job that is still alive. Legacy jobs never hold one. */
-export function nextSlot(repo: string): number {
+/** Slots held by jobs that are still alive (not done or discarded). Legacy jobs never hold one. */
+export function heldSlots(repo: string): Set<number> {
   const used = new Set<number>()
   for (const j of listJobs(repo)) {
     if ('legacy' in j || j.stage === 'done' || j.stage === 'discarded') continue
     used.add(j.slot)
   }
+  return used
+}
+
+/** Lowest slot >= 1 not held by a job that is still alive. */
+export function nextSlot(repo: string): number {
+  const used = heldSlots(repo)
   let slot = 1
   while (used.has(slot)) slot++
   return slot

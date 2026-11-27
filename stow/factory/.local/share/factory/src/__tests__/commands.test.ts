@@ -259,6 +259,22 @@ describe('feedback', () => {
     ])
   })
 
+  test('a revived done job takes a free slot when another job holds its own; a free slot is kept', async () => {
+    const t = await setup({ gh: [{ match: ['gh', 'pr', 'view'], result: comments([]) }] })
+    const other = (id: string, slot: number, stage: Job['stage']) =>
+      saveJob(jobPaths(t.repo, id).jobFile, { ...createJob({ id, feature: 'x', repo: t.repo, slot, now: NOW }), stage }, NOW)
+    await t.job({ stage: 'done', waitingFor: null, planned: true, pr: PR, trip: 1, cycle: 1, slot: 1 })
+    other('261126-live1', 1, 'build') // took slot 1 once ours was done
+    other('261126-live2', 2, 'review')
+    other('261126-old', 3, 'done') // done: holds no slot
+    other('261126-gone', 4, 'discarded')
+    expect((await feedback(t.repo, ID, 'Use Redis', t.deps)).slot).toBe(3)
+    expect(t.load().slot).toBe(3)
+    expect((await feedback(t.repo, '261126-old', 'Again', t.deps)).slot).toBe(4)
+    other('261126-done5', 5, 'done')
+    expect((await feedback(t.repo, '261126-done5', 'Free', t.deps)).slot).toBe(5)
+  })
+
   test('feedback collects PR comments since the last feedback file, verbatim, with the note last', async () => {
     const t = await setup({
       gh: [
