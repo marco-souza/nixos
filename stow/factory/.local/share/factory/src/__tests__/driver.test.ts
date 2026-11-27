@@ -569,6 +569,23 @@ describe('runJob', () => {
     expect(t.exec.gh('pr', 'ready')).toEqual([])
   })
 
+  test('commandFor replaces the harness command; the run files stay the same', async () => {
+    const t = await setup({ stage: 'test-planning' })
+    const seen: string[] = []
+    t.deps.commandFor = (role, files) => {
+      seen.push(`${role} ${files.harness} ${basename(files.system)} ${basename(files.task)}`)
+      return `fake ${role}`
+    }
+    expect(await t.run()).toBe('waiting')
+    expect(seen[0]).toBe('test-planner claude test-planner-1.system.md test-planner-1.task.md')
+    const req = t.spawner.requests[0]!
+    expect(req).toMatchObject({ command: 'fake test-planner', tail: 'claude', interactive: false })
+    expect(req.scriptFile).toBe(join(t.paths.runDir, 'test-planner-1.sh'))
+    expect(req.logFile).toBe(join(t.paths.logsDir, 'test-planner-1.log'))
+    expect(req.doneFile).toBe(join(t.paths.doneDir, 'test-planner-1'))
+    expect(t.spawner.requests.every((r) => r.command === `fake ${r.window.replace(/·\d+$/, '')}`)).toBe(true)
+  })
+
   test('feature text with $(…) and quotes appears only in the task file', async () => {
     const feature = `Add "quotes", 'single' $(rm -rf ~) and \`whoami\` \\ end`
     const t = await setup({ feature })

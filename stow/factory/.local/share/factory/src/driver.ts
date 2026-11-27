@@ -290,7 +290,7 @@ async function startAgent(c: Ctx, s: AgentSpec): Promise<Attempt> {
     jobId: job.id,
     window,
     cwd: job.worktree,
-    command: buildCommand(role, h, files),
+    command: c.deps.commandFor ? c.deps.commandFor(s.role, { ...files, harness: h.harness }) : buildCommand(role, h, files),
     scriptFile: `${base}.sh`,
     logFile: join(paths.logsDir, `${s.role}-${n}.log`),
     doneFile: join(paths.doneDir, `${s.role}-${n}`),

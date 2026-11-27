@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { Harness } from './config'
 import { realExec, type Exec } from './exec'
 import { Git, GitHub } from './git'
 import { notify } from './notify'
@@ -12,6 +13,8 @@ export interface Deps {
   git: Git
   gh: GitHub
   rolesDir: string
+  /** Replaces the harness command line for an agent (the end-to-end test runs fake agents). */
+  commandFor?(role: string, files: { system: string; task: string; harness: Harness }): string
   notify(n: { title: string; message: string }): Promise<void>
   now(): Date
   sleep(ms: number): Promise<void>
