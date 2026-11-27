@@ -21,7 +21,10 @@ async function deadPid(): Promise<number> {
 describe('acquireLock', () => {
   test('second acquire throws with pid', () => {
     const release = acquireLock(jobDir)
-    expect(() => acquireLock(jobDir)).toThrow(new LockError(`driver already running for 261126-x (pid ${process.pid})`))
+    const lock = join(jobDir, 'driver.lock')
+    expect(() => acquireLock(jobDir)).toThrow(
+      new LockError(`driver already running for 261126-x (pid ${process.pid}). If it isn't (e.g. after a reboot), delete ${lock}`),
+    )
     expect(() => acquireLock(jobDir)).toThrow(LockError)
     release()
     expect(existsSync(join(jobDir, 'driver.lock'))).toBe(false)

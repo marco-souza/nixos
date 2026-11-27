@@ -1,5 +1,5 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, resolve } from 'node:path'
 
 export class LockError extends Error {
   constructor(message: string) {
@@ -29,7 +29,7 @@ function holder(file: string): number | null {
 
 /** Takes `<jobDir>/driver.lock` for `pid` and returns its release. A lock whose pid is dead is taken over. */
 export function acquireLock(jobDir: string, pid: number = process.pid): () => void {
-  const file = join(jobDir, 'driver.lock')
+  const file = resolve(jobDir, 'driver.lock')
   const id = basename(jobDir)
   for (let i = 0; i < 2; i++) {
     try {
@@ -41,7 +41,10 @@ export function acquireLock(jobDir: string, pid: number = process.pid): () => vo
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
     }
     const other = holder(file)
-    if (other !== null && alive(other)) throw new LockError(`driver already running for ${id} (pid ${other})`)
+    // A reboot can hand the dead driver's pid to another process: say how to get out.
+    if (other !== null && alive(other)) {
+      throw new LockError(`driver already running for ${id} (pid ${other}). If it isn't (e.g. after a reboot), delete ${file}`)
+    }
     rmSync(file, { force: true })
   }
   throw new LockError(`could not take the driver lock for ${id}`)
