@@ -12,7 +12,9 @@ import { listJobs, type Job, type LegacyJob } from './job'
 import { acquireLock, LockError } from './lock'
 import { CommandError } from './machine'
 import { jobPaths, PACKAGE_DIR } from './paths'
+import { STEPS } from './prbody'
 import { createFormatter } from './tail'
+import { nextHint, whatFor } from './ui'
 
 const ACTIVITY_LINES = 200
 const MAX_LOG_LINES = 2000
@@ -207,7 +209,12 @@ export function startServer(
     if (parts[0] !== 'api' || parts[1] !== 'jobs' || parts.length > 4) throw new HttpError(404, 'not found')
     if (parts.length === 2) {
       get()
-      return json({ project, jobs: listJobs(repo), now: deps.now().toISOString() })
+      // The page shows the CLI's own words and step table, so the three never drift apart.
+      const jobs = listJobs(repo).map((j) =>
+        'legacy' in j ? { ...j, hint: null, whatFor: null } : { ...j, hint: nextHint(j), whatFor: whatFor(j) },
+      )
+      const limits = { maxTrips: loadConfig(repo).maxTrips }
+      return json({ project, jobs, now: deps.now().toISOString(), limits, steps: STEPS })
     }
     let id: string
     try {

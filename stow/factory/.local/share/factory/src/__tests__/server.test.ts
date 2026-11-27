@@ -9,8 +9,10 @@ import { Git, GitHub } from '../git'
 import { createJob, loadJob, saveJob, type Job } from '../job'
 import { acquireLock } from '../lock'
 import { jobPaths } from '../paths'
+import { STEPS } from '../prbody'
 import { startServer } from '../server'
 import type { Spawner } from '../spawn'
+import { nextHint, whatFor } from '../ui'
 import { FakeExec } from './helpers'
 
 const NOW = new Date(2026, 10, 26, 12, 0, 0)
@@ -112,6 +114,28 @@ describe('dashboard server', () => {
     cleanups.push(() => server.stop(true))
     const body = await (await fetch(`http://127.0.0.1:${server.port}/`)).text()
     expect(body).toMatch(/^<h1>factory-server-\w+<\/h1>$/)
+  })
+
+  test('lists the step table, the trip cap and each job\'s hint and need, as the CLI words them', async () => {
+    const t = await setup()
+    const body = (await (await t.get('/api/jobs')).json()) as any
+    expect(body.limits).toEqual({ maxTrips: 3 })
+    expect(body.steps).toEqual(STEPS)
+    const byId = (id: string) => body.jobs.find((j: any) => j.id === id)
+    for (const id of [ID, '261126-needs-human', '261126-build', '261126-done']) {
+      const job = loadJob(jobPaths(t.repo, id).jobFile) as Job
+      expect(byId(id).hint).toBe(nextHint(job))
+      expect(byId(id).whatFor).toBe(whatFor(job))
+    }
+    expect(byId(ID).whatFor).toBe('Review the PR')
+    expect(byId('261126-build')).toMatchObject({ whatFor: null, hint: 'factory attach 261126-build to watch' })
+    expect(byId('old-job')).toMatchObject({ legacy: true, hint: null, whatFor: null })
+  })
+
+  test('the trip cap comes from the repo config', async () => {
+    const t = await setup()
+    writeFileSync(join(t.repo, '.factory.json'), JSON.stringify({ maxTrips: 5 }))
+    expect(((await (await t.get('/api/jobs')).json()) as any).limits).toEqual({ maxTrips: 5 })
   })
 
   test('lists jobs including legacy', async () => {

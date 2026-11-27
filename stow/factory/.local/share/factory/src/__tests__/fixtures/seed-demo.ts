@@ -5,14 +5,17 @@
  *
  *   bun src/__tests__/fixtures/seed-demo.ts /tmp/factory-demo
  *
- * Re-running replaces `<dir>/.factory`. Serve it with serve-demo.ts, which never launches anything.
+ * Re-running replaces `<dir>/.factory`, so it refuses a non-empty `<dir>` without the `.factory-demo` file an
+ * earlier seed left. Serve it with serve-demo.ts, which never launches anything.
  */
-import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { realExec } from '../../exec'
 import { createJob, saveJob, type Job, type Stage, type TripRecord } from '../../job'
 import { jobPaths } from '../../paths'
 
+/** Left in <dir> by a seed: the only sign that wiping <dir>/.factory is safe. */
+const MARKER = '.factory-demo'
 const NOW = Date.now()
 const ago = (min: number) => new Date(NOW - min * 60_000)
 const today = (() => {
@@ -487,7 +490,14 @@ async function main(): Promise<void> {
     process.exit(2)
   }
   const repo = resolve(dir)
+  // Re-seeding wipes <dir>/.factory: only in an empty folder or one this script seeded before.
+  const marker = join(repo, MARKER)
+  if (existsSync(repo) && readdirSync(repo).length && !existsSync(marker)) {
+    console.error(`seed-demo: refusing to seed ${repo}: it isn't empty and has no ${MARKER} file from an earlier seed`)
+    process.exit(1)
+  }
   mkdirSync(repo, { recursive: true })
+  writeFileSync(marker, 'Seeded by seed-demo.ts; seeding again replaces .factory/ here.\n')
   if (!existsSync(join(repo, '.git'))) {
     const r = await realExec.run(['git', 'init', '-q', '-b', 'main'], { cwd: repo })
     if (r.code !== 0) throw new Error(`git init: ${r.stderr}`)

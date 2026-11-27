@@ -4,12 +4,12 @@ import { join } from 'node:path'
 import { PACKAGE_DIR } from '../paths'
 
 const html = readFileSync(join(PACKAGE_DIR, 'dashboard.html'), 'utf8')
+const libSrc = /<script id="lib">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? ''
 
 /** The page's `<script id="lib">`: pure helpers with no DOM, so they run here. */
 function lib(fetch: (url: string, init?: RequestInit) => Promise<Response> = async () => new Response('{}')) {
-  const src = /<script id="lib">([\s\S]*?)<\/script>/.exec(html)?.[1]
-  if (!src) throw new Error('dashboard.html has no <script id="lib">')
-  return new Function('fetch', `${src}\nreturn { markdown, inline, post, safeUrl }`)(fetch) as {
+  if (!libSrc) throw new Error('dashboard.html has no <script id="lib">')
+  return new Function('fetch', `${libSrc}\nreturn { markdown, inline, post, safeUrl }`)(fetch) as {
     markdown(src: string): string
     inline(src: string): string
     post(path: string, body?: unknown): Promise<unknown>
@@ -93,5 +93,37 @@ describe('dashboard.html', () => {
     expect(safeUrl('javascript:alert(1)')).toBeNull()
     expect(safeUrl('/relative')).toBeNull()
     expect(safeUrl('')).toBeNull()
+  })
+
+  // A loop in markdown() would hang this process, so it runs in a child that is killed after 5 s.
+  test.each([
+    ['U+2028', '# Title tail\n\nbody', '<h1>Title tail</h1>'],
+    ['U+2029', '## Risks   more\nbody', '<h2>Risks   more</h2>'],
+  ])('markdown terminates on a heading with %s', (_, input, heading) => {
+    const code = `${libSrc}\nprocess.stdout.write(markdown(${JSON.stringify(input)}))`
+    const r = Bun.spawnSync([process.execPath, '-e', code], { timeout: 5000 })
+    expect(r.exitCode).toBe(0)
+    expect(r.stdout.toString()).toBe(`${heading}<p>body</p>`)
+  })
+
+  test('markdown drops protocol-relative links', () => {
+    const { markdown } = lib()
+    const out = markdown('[a](//evil.example/x) [b](/\\evil.example) [c](\\\\evil.example)')
+    expect(out).not.toContain('<a')
+    expect(out).toBe('<p>a b c</p>')
+    expect(markdown('[ok](/docs/x.md)')).toContain('href="/docs/x.md"')
+  })
+
+  test('link text never holds a second link', () => {
+    const { inline } = lib()
+    const out = inline('[see https://a.test/x](https://b.test)')
+    expect(out.match(/<a /g)).toHaveLength(1)
+    expect(out).toContain('>see https://a.test/x</a>')
+  })
+
+  test('the page keeps no copies of the CLI wording, step labels or the trip cap', () => {
+    // /api/jobs serves them: `hint`, `whatFor`, `steps` and `limits.maxTrips`.
+    expect(html).not.toMatch(/function nextHint|function whatFor|MAX_TRIPS|label: 'tech discovery'/)
+    expect(html).not.toContain('once QA is back')
   })
 })
