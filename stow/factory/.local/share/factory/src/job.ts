@@ -3,12 +3,14 @@ import { dirname } from 'node:path'
 import { jobPaths } from './paths'
 
 export type Stage =
-  | 'requirements' | 'tech-discovery' | 'design' | 'discovery-review'
+  | 'requirements' | 'preflight' | 'report' | 'tech-discovery' | 'design' | 'discovery-review'
   | 'planning' | 'build' | 'review' | 'build-judge'
   | 'test-planning' | 'rebase' | 'qa-wait' | 'validation' | 'validation-judge'
   | 'human-review' | 'finalize' | 'done' | 'needs-human' | 'discarded'
 export type WaitingFor = null | 'requirements' | 'human-review' | 'escalation' | 'failure'
 export type CapHit = null | 'trips' | 'discovery' | 'env'
+/** What the job delivers, decided in the grill: a pull request, or a report with no code and no PR. */
+export type Deliverable = 'pr' | 'report'
 
 export interface TripRecord {
   cycle: number
@@ -26,6 +28,12 @@ export interface Job {
   id: string
   feature: string
   branch: string
+  /** The branch the job starts from, opens its PR against and rebases onto. Fixed when the job is created. */
+  base: string
+  /** Null until the requirements doc lands. */
+  deliverable: Deliverable | null
+  /** `decision-<k>.md` files from `factory unblock`; every later agent reads them. */
+  decisions: string[]
   worktree: string
   slot: number
   stage: Stage
@@ -56,13 +64,16 @@ export interface Job {
   updatedAt: string
 }
 
-export function createJob(args: { id: string; branch: string; feature: string; repo: string; slot: number; now: Date }): Job {
+export function createJob(args: { id: string; branch: string; base: string; feature: string; repo: string; slot: number; now: Date }): Job {
   const at = args.now.toISOString()
   return {
     version: 2,
     id: args.id,
     feature: args.feature,
     branch: args.branch,
+    base: args.base,
+    deliverable: null,
+    decisions: [],
     worktree: jobPaths(args.repo, args.id).worktree,
     slot: args.slot,
     stage: 'requirements',
@@ -97,7 +108,8 @@ export function createJob(args: { id: string; branch: string; feature: string; r
 export function loadJob(file: string): Job {
   const raw = JSON.parse(readFileSync(file, 'utf8'))
   if (raw?.version !== 2) throw new Error(`${file}: not a factory v2 job`)
-  return { ...raw, stoppedReason: raw.stoppedReason ?? null }
+  // An empty base (a job from before per-job bases) is filled from the config by the driver.
+  return { ...raw, stoppedReason: raw.stoppedReason ?? null, base: raw.base ?? '', deliverable: raw.deliverable ?? null, decisions: raw.decisions ?? [] }
 }
 
 export function saveJob(file: string, job: Job, now: Date): void {

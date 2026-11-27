@@ -655,7 +655,7 @@ async function post(path, body) {
   return data
 }
 
-/** The tmux window a log's agent runs in (driver.ts): `reviewer-code-1` in `reviewer-code`, `reviewer-code-2` in `reviewer-code-2`. */
+/** The window name a log's agent runs under (driver.ts): `reviewer-code-1` in `reviewer-code`, `reviewer-code-2` in `reviewer-code-2`. */
 function windowOf(log) {
   const m = /^(.*)-1$/.exec(log)
   return m ? m[1] : log
@@ -693,6 +693,9 @@ const columns = () => [...groups(), 'Done'].map((label) => {
 /** Waits on the human: the grill, PR review, an escalation or a failure (ui.ts needsYou). */
 const needsYou = (j) => j.waitingFor !== null && j.stage !== 'done' && j.stage !== 'discarded'
 const stepOf = (stage) => steps().find((s) => s.stage === stage)
+/** The steps this job goes through: a report job skips the PR's (server `steps`). */
+const jobSteps = (j) => steps().filter((s) => !j.steps || j.steps.includes(s.stage))
+const isReport = (j) => j.deliverable === 'report'
 const currentStage = (j) => (j.stage === 'needs-human' ? j.resumeStage : j.stage)
 const lastTrip = (j) => (j.trips && j.trips.length ? j.trips[j.trips.length - 1] : null)
 const prNumber = (pr) => (pr ? `#${/\/pull\/(\d+)/.exec(pr)?.[1] ?? '?'}` : '-')
@@ -739,8 +742,8 @@ function ago(iso, now) {
 /** The kind of ticket a waiting job gets and the buttons that fit; the words are the server's `whatFor`. */
 function need(j) {
   const n = (kind, actions) => ({ kind, actions, title: j.whatFor ?? 'Needs you', question: null })
-  if (j.stage === 'requirements') return n('grill', ['attach', 'discard'])
-  if (j.stage === 'human-review') return n('review', ['approve', 'feedback', 'pr', 'discard'])
+  if (j.stage === 'requirements') return n('grill', ['discard'])
+  if (j.stage === 'human-review') return n('review', isReport(j) ? ['approve', 'feedback', 'discard'] : ['approve', 'feedback', 'pr', 'discard'])
   if (j.capHit === 'env') return n('env', ['retry', 'approve', 'why', 'discard'])
   if (j.waitingFor === 'escalation') return { ...n('decide', ['approve', 'feedback', 'why', 'pr', 'discard']), question: questions.get(qKey(j)) ?? null }
   return n('failed', ['retry', 'logs', 'discard'])
@@ -917,7 +920,7 @@ function badges(j) {
 /** Dots for the steps of the job's stage group: done, current (pulsing), waiting on you, failed, pending. */
 function strip(j) {
   const cur = currentStage(j)
-  const all = steps()
+  const all = jobSteps(j)
   const at = all.findIndex((s) => s.stage === cur)
   const step = all[at]
   if (!step) return null
@@ -937,7 +940,7 @@ function strip(j) {
 /** Discovery ✓ Building ● Validation ○ Deploy ○ (ui.ts pipelineLine). */
 function groupsLine(j) {
   const step = stepOf(currentStage(j))
-  const all = groups()
+  const all = [...new Set(jobSteps(j).map((s) => s.group))]
   const at = step ? all.indexOf(step.group) : -1
   const failed = j.stage === 'needs-human' && j.waitingFor === 'failure'
   return h('ol', { class: 'groups', 'aria-label': 'Pipeline' }, all.map((g, i) => {
@@ -986,7 +989,7 @@ function boardCard(j) {
   const final = j.stage === 'done' || j.stage === 'discarded'
   const cls = `card c-${column(j)}${final ? ' final' : ''}${j.stage === 'discarded' ? ' discarded' : ''}`
   let body
-  if (j.stage === 'done') body = h('p', { class: 'note' }, j.ready === false ? 'PR left as a draft' : 'PR ready for review')
+  if (j.stage === 'done') body = h('p', { class: 'note' }, isReport(j) ? 'Report delivered' : j.ready === false ? 'PR left as a draft' : 'PR ready for review')
   else if (j.stage === 'discarded') body = h('p', { class: 'note' }, 'Discarded')
   else body = [strip(j), chips(j), agents(j)]
   return h('article', { class: cls, tabindex: '0', dataset: { card: j.id, focus: 'card' }, 'aria-label': `${j.id}: ${j.feature}` },
@@ -1003,8 +1006,6 @@ function actionButton(j, a, n, st) {
   const btn = (label, cls, onclick, extra = {}) =>
     h('button', { type: 'button', class: `btn ${cls}`, onclick, disabled: busy, dataset: { focus: a }, ...extra }, st.busy === a ? BUSY[a] : label)
   switch (a) {
-    case 'attach':
-      return btn('Attach', 'primary', (e) => copyAttach(j, e.currentTarget), { title: `Copies: factory attach ${j.id}` })
     case 'approve':
       return btn('Approve', n.kind === 'env' ? '' : 'primary', () => act(j.id, 'approve'))
     case 'feedback':
@@ -1263,18 +1264,6 @@ function closeFeedback(id) {
   uiOf(id).feedback = false
   render()
   document.querySelector(`#tickets [data-card="${CSS.escape(id)}"]`)?.focus()
-}
-
-async function copyAttach(j, btn) {
-  const cmd = `factory attach ${j.id}`
-  try {
-    await navigator.clipboard.writeText(cmd)
-    btn.textContent = 'Copied'
-    setTimeout(() => { btn.textContent = 'Attach' }, 1600)
-  } catch {
-    uiOf(j.id).error = `Couldn't copy. Run: ${cmd}`
-    render()
-  }
 }
 
 let discarding = null

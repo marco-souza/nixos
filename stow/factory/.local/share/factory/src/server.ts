@@ -12,7 +12,7 @@ import { listJobs, type Job } from './job'
 import { acquireLock, LockError } from './lock'
 import { CommandError } from './machine'
 import { jobPaths, PACKAGE_DIR } from './paths'
-import { STEPS } from './prbody'
+import { STEPS, stepsFor } from './prbody'
 import { createFormatter } from './tail'
 import { nextHint, whatFor } from './ui'
 
@@ -210,7 +210,8 @@ export function startServer(
     if (parts.length === 2) {
       get()
       // The page shows the CLI's own words and step table, so the three never drift apart.
-      const jobs = listJobs(repo).map((j) => ({ ...j, hint: nextHint(j), whatFor: whatFor(j) }))
+      // `steps`: the stages this job goes through (a report job skips the PR's).
+      const jobs = listJobs(repo).map((j) => ({ ...j, hint: nextHint(j), whatFor: whatFor(j), steps: stepsFor(j).map((s) => s.stage) }))
       const limits = { maxTrips: loadConfig(repo).maxTrips }
       return json({ project, jobs, now: deps.now().toISOString(), limits, steps: STEPS })
     }

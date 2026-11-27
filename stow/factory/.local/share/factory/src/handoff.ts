@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { FactoryConfig } from './config'
+import type { Deliverable } from './job'
 import type { JobPaths } from './paths'
 
 export type OutputKind =
@@ -16,6 +17,8 @@ export type OutputKind =
   | 'validation-judge'
   | 'rebase'
   | 'pr'
+  | 'access'
+  | 'report'
 
 export type Check = { ok: true; verdict: string | null } | { ok: false; problem: string }
 
@@ -82,6 +85,10 @@ export function outputPath(
       return tripFile('rebase.md')
     case 'pr':
       return paths.prFile
+    case 'access':
+      return paths.accessFile
+    case 'report':
+      return paths.reportFile
   }
 }
 
@@ -170,6 +177,22 @@ export function parseDiscoveryReview(text: string): { verdict: 'PASS' | 'REWORK'
   return step ? { verdict: word, step } : { verdict: word }
 }
 
+function deliverableOf(text: string): Deliverable | null {
+  const d = listLine(text, 'Deliverable')?.[0]
+  return d === 'pr' || d === 'report' ? d : null
+}
+
+/** What the factory reads from a checked requirements doc: its title, deliverable and access list (empty for "None."). */
+export function parseRequirements(text: string): { title: string; deliverable: Deliverable; access: string[] } {
+  const items = (section(text, '## Access') ?? []).map(unmark).filter(Boolean)
+  const none = items.length === 1 && /^none\b/i.test(items[0]!)
+  return {
+    title: firstLine(text).replace(/^#\s+/, '').trim(),
+    deliverable: deliverableOf(text) ?? 'pr',
+    access: none ? [] : items,
+  }
+}
+
 export function hasHumanQuestions(design: string): boolean {
   const body = (section(design, '## Questions for the human') ?? []).filter((l) => l.trim() !== '')
   if (body.length === 0) return false
@@ -182,6 +205,8 @@ type LineSpec = { prefix: 'VERDICT' | 'STATUS'; words: string[]; questionsOn?: s
 const LINE_SPECS: Partial<Record<OutputKind, LineSpec>> = {
   build: { prefix: 'STATUS', words: ['READY', 'BLOCKED'] },
   rebase: { prefix: 'STATUS', words: ['READY', 'BLOCKED'] },
+  access: { prefix: 'STATUS', words: ['READY', 'BLOCKED'] },
+  report: { prefix: 'STATUS', words: ['READY', 'BLOCKED'] },
   review: { prefix: 'VERDICT', words: ['PASS', 'CHANGES'] },
   validation: { prefix: 'VERDICT', words: ['PASS', 'FAIL'] },
   'build-judge': { prefix: 'VERDICT', words: ['APPROVE', 'CHANGES', 'ESCALATE'], questionsOn: ['ESCALATE'] },
@@ -236,7 +261,9 @@ export function checkOutput(kind: OutputKind, text: string, cfg: FactoryConfig):
   switch (kind) {
     case 'requirements': {
       if (!firstLine(text).startsWith('# ')) return { ok: false, problem: 'first line must start with "# "' }
-      return fail(missing(text, ['## Intent', '## Requirements', '## Decisions'])) ?? pass
+      const m = fail(missing(text, ['## Intent', '## Requirements', '## Decisions', '## Access']))
+      if (m) return m
+      return deliverableOf(text) ? pass : { ok: false, problem: 'missing "Deliverable: pr" or "Deliverable: report" line' }
     }
     case 'tech-discovery':
       return fail(missing(text, ['## Findings', '## Risks'])) ?? pass

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { Harness } from './config'
-import type { Exec, ExecResult } from './exec'
-import { CLI_PATH } from './paths'
+import type { Exec } from './exec'
+import { CLI_PATH, jobPaths } from './paths'
 import { shq } from './shell'
 
 export interface SpawnRequest {
@@ -12,31 +13,17 @@ export interface SpawnRequest {
   scriptFile: string
   logFile: string
   doneFile: string
-  interactive: boolean
   tail: Harness | null
 }
 
 export interface Spawner {
-  /** Session `factory-<job>` with a `driver` window. No-op when it exists. */
-  ensureSession(jobId: string, cwd: string, driverCmd: string): Promise<void>
   start(req: SpawnRequest): Promise<void>
   isAlive(jobId: string, window: string): Promise<boolean>
   kill(jobId: string, window: string): Promise<void>
-  /** Every window but `driver`. */
+  /** Every agent of the job; not the driver. */
   killAgents(jobId: string): Promise<void>
-  killSession(jobId: string): Promise<void>
-  /** Creates the session, or its `driver` window, when missing. Throws when tmux can't start the driver. */
+  /** Starts the job's driver in the background, replacing a running one. Throws when it can't start. */
   respawnDriver(jobId: string, cwd: string, driverCmd: string): Promise<void>
-}
-
-const session = (jobId: string) => `factory-${jobId}`
-// `=` makes tmux match the name exactly; bare names fall back to prefix matching.
-const exact = (jobId: string) => `=${session(jobId)}`
-
-/** A tmux call that should have started the driver failed: say so, or the command would report a false success. */
-function driverError(jobId: string, r: ExecResult): Error {
-  const first = r.stderr.split('\n').find((l) => l.trim())?.trim() ?? `exit ${r.code}`
-  return new Error(`tmux: could not start the driver for ${jobId}: ${first}`)
 }
 
 // A bad cwd must still leave an exit code, or the waiter runs to its timeout.
@@ -44,99 +31,94 @@ const cdFail = (req: SpawnRequest) => `{ echo 97 > ${shq(req.doneFile)}; exit 97
 
 /** Write `req.scriptFile` and return its content. */
 export function writeRunScript(req: SpawnRequest): string {
-  const lines = ['#!/usr/bin/env bash']
-  if (req.interactive) {
-    lines.push(`cd ${shq(req.cwd)} || ${cdFail(req)}`, req.command, `echo $? > ${shq(req.doneFile)}`)
-  } else {
-    const tail = req.tail ? ` | ${shq(process.execPath)} ${shq(CLI_PATH)} tail --format ${req.tail}` : ''
-    lines.push(
-      'set -o pipefail',
-      `cd ${shq(req.cwd)} || ${cdFail(req)}`,
-      `${req.command} 2>&1 | tee -a ${shq(req.logFile)}${tail}`,
-      `echo "\${PIPESTATUS[0]}" > ${shq(req.doneFile)}`,
-    )
-  }
+  const tail = req.tail ? ` | ${shq(process.execPath)} ${shq(CLI_PATH)} tail --format ${req.tail}` : ''
+  const lines = [
+    '#!/usr/bin/env bash',
+    'set -o pipefail',
+    `cd ${shq(req.cwd)} || ${cdFail(req)}`,
+    `${req.command} 2>&1 | tee -a ${shq(req.logFile)}${tail}`,
+    `echo "\${PIPESTATUS[0]}" > ${shq(req.doneFile)}`,
+  ]
   const script = lines.join('\n') + '\n'
   writeFileSync(req.scriptFile, script)
   return script
 }
 
-export class TmuxSpawner implements Spawner {
-  constructor(private exec: Exec) {}
+const DRIVER = 'driver'
 
-  private tmux(...args: string[]) {
-    return this.exec.run(['tmux', ...args])
+/** Background processes, one pid file each under the job's run folder. They outlive the command that started them. */
+export class ProcessSpawner implements Spawner {
+  constructor(private repo: string) {}
+
+  private pidFile(jobId: string, name: string) {
+    return join(jobPaths(this.repo, jobId).runDir, `${name}.pid`)
   }
 
-  private async hasSession(jobId: string): Promise<boolean> {
-    return (await this.tmux('has-session', '-t', exact(jobId))).code === 0
+  private launch(jobId: string, name: string, argv: string[], cwd: string, logFile: string): void {
+    mkdirSync(dirname(logFile), { recursive: true })
+    mkdirSync(dirname(this.pidFile(jobId, name)), { recursive: true })
+    const fd = openSync(logFile, 'a')
+    try {
+      // detached: its own process group, so `kill` takes the whole tree and a closed terminal doesn't.
+      const p = Bun.spawn(argv, { cwd, stdin: 'ignore', stdout: fd, stderr: fd, detached: true })
+      p.unref()
+      writeFileSync(this.pidFile(jobId, name), String(p.pid))
+    } finally {
+      closeSync(fd)
+    }
   }
 
-  private async createSession(jobId: string, cwd: string, driverCmd: string): Promise<void> {
-    const r = await this.tmux('new-session', '-d', '-s', session(jobId), '-n', 'driver', '-c', cwd, driverCmd)
-    if (r.code !== 0) throw driverError(jobId, r)
-    const s = exact(jobId)
-    await this.tmux('set-option', '-t', s, 'status-left', '#[bold]factory #S ')
-    // So an agent that fails instantly keeps its window even before the per-window option lands.
-    await this.tmux('set-option', '-t', s, 'remain-on-exit', 'on')
-  }
-
-  async ensureSession(jobId: string, cwd: string, driverCmd: string): Promise<void> {
-    if (!(await this.hasSession(jobId))) await this.createSession(jobId, cwd, driverCmd)
+  private pid(jobId: string, name: string): number | null {
+    const f = this.pidFile(jobId, name)
+    if (!existsSync(f)) return null
+    const n = Number(readFileSync(f, 'utf8').trim())
+    if (!Number.isInteger(n) || n <= 0) return null
+    try {
+      process.kill(n, 0)
+      return n
+    } catch {
+      return null
+    }
   }
 
   async start(req: SpawnRequest): Promise<void> {
     writeRunScript(req)
-    const target = `${exact(req.jobId)}:${req.window}`
-    // -d: never steal focus from the driver or the human.
-    const created = await this.tmux(
-      'new-window', '-d', '-t', `${exact(req.jobId)}:`, '-n', req.window, '-c', req.cwd, `bash ${shq(req.scriptFile)}`,
-    )
-    if (created.code !== 0) throw new Error(`tmux new-window ${req.window}: ${created.stderr.trim()}`)
-    // Keep a failed agent's window for inspection.
-    await this.tmux('set-option', '-w', '-t', target, 'remain-on-exit', 'on')
-    if (req.interactive) await this.tmux('select-window', '-t', target)
-  }
-
-  private async windows(jobId: string, format: string): Promise<string[]> {
-    const r = await this.tmux('list-windows', '-t', exact(jobId), '-F', format)
-    return r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []
+    this.launch(req.jobId, req.window, ['bash', req.scriptFile], req.cwd, `${req.scriptFile}.out`)
   }
 
   async isAlive(jobId: string, window: string): Promise<boolean> {
-    const rows = await this.windows(jobId, '#{window_name} #{pane_dead}')
-    return rows.some((row) => row === `${window} 0`)
+    return this.pid(jobId, window) !== null
   }
 
   async kill(jobId: string, window: string): Promise<void> {
-    await this.tmux('kill-window', '-t', `${exact(jobId)}:${window}`)
-  }
-
-  async killAgents(jobId: string): Promise<void> {
-    for (const w of await this.windows(jobId, '#{window_name}')) {
-      if (w !== 'driver') await this.kill(jobId, w)
+    const pid = this.pid(jobId, window)
+    if (pid === null) return
+    try {
+      process.kill(-pid, 'SIGTERM')
+    } catch {
+      // gone already
     }
   }
 
-  async killSession(jobId: string): Promise<void> {
-    await this.tmux('kill-session', '-t', exact(jobId))
+  async killAgents(jobId: string): Promise<void> {
+    const dir = jobPaths(this.repo, jobId).runDir
+    if (!existsSync(dir)) return
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.pid') && f !== `${DRIVER}.pid`) await this.kill(jobId, f.slice(0, -4))
+    }
   }
 
   async respawnDriver(jobId: string, cwd: string, driverCmd: string): Promise<void> {
-    if (!(await this.hasSession(jobId))) return this.createSession(jobId, cwd, driverCmd)
-    // The human may have closed the driver window.
-    const r = (await this.windows(jobId, '#{window_name}')).includes('driver')
-      ? await this.tmux('respawn-window', '-k', '-t', `${exact(jobId)}:driver`, '-c', cwd, driverCmd)
-      : await this.tmux('new-window', '-d', '-t', `${exact(jobId)}:`, '-n', 'driver', '-c', cwd, driverCmd)
-    if (r.code !== 0) throw driverError(jobId, r)
+    // Never kill ourselves: `factory run --here` is the driver.
+    const old = this.pid(jobId, DRIVER)
+    if (old !== null && old !== process.pid) await this.kill(jobId, DRIVER)
+    this.launch(jobId, DRIVER, ['bash', '-c', `exec ${driverCmd}`], cwd, join(jobPaths(this.repo, jobId).logsDir, 'driver.log'))
   }
 }
 
-/** Same contract without tmux: runs the script to completion in `start()`. For tests and `--inline`. */
+/** Same contract without processes: runs the script to completion in `start()`. For the grill, tests and `--inline`. */
 export class InlineSpawner implements Spawner {
   constructor(private exec: Exec) {}
-
-  async ensureSession(): Promise<void> {}
 
   async start(req: SpawnRequest): Promise<void> {
     writeRunScript(req)
@@ -149,7 +131,6 @@ export class InlineSpawner implements Spawner {
 
   async kill(): Promise<void> {}
   async killAgents(): Promise<void> {}
-  async killSession(): Promise<void> {}
   async respawnDriver(): Promise<void> {}
 }
 

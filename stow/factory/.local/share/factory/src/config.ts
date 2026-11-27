@@ -12,7 +12,10 @@ export interface RoleOverride {
 }
 
 export interface FactoryConfig {
-  base: string
+  /** The branch new jobs start from; null: origin's default branch. `factory new --base` overrides it per job. */
+  base: string | null
+  /** PR title template with `{type}`, `{ticket}` and `{summary}`; null: the summarizer follows the repo's PR rules. */
+  prTitle: string | null
   setup: string[]
   docs: { requirements: string; techDiscovery: string; design: string; specs: string; testPlans: string }
   hooks: { prOpened?: string; qaUrl?: string; qaReady?: string }

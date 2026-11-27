@@ -1,41 +1,48 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { loadConfig } from '../config'
 import type { Deps } from '../deps'
-import { driverCommand } from '../driver'
 import { jobIdFor, nameBranch, takenIds } from '../ids'
 import { appendActivity, createJob, nextSlot, saveJob, type Job } from '../job'
 import { CommandError } from '../machine'
 import { jobPaths } from '../paths'
 import { paint } from '../ui'
-import { enterSession, hasTmux, realTerminal } from './attach'
-import { failed, ok, ReportedError, type Args, type Cli, type Terminal } from './shared'
+import { relayGrill } from './answer'
+import { failed, ok, ReportedError, type Args, type Cli } from './shared'
 
 const SETUP_OUTPUT_LINES = 30
 
+export interface NewOptions {
+  /** The branch to start from, open the PR against and rebase onto. */
+  base?: string
+  /** An open PR (number or URL) whose branch is the base: the job's PR stacks on it. */
+  stack?: string
+}
+
 /**
- * Creates the job, its worktree and its tmux session, whose driver starts the grill. Prints one line per step;
- * a failing step prints `✗ <step>: …` and throws. Checks gh and tmux before creating anything.
+ * Creates the job and its worktree. Prints one line per step; a failing step prints `✗ <step>: …` and throws.
+ * Checks gh before creating anything. The grill starts with `relayGrill`.
  */
 export async function newJob(
   repo: string,
   feature: string,
   deps: Deps,
-  o: { attach: boolean; terminal?: Terminal },
+  o: NewOptions = {},
 ): Promise<Job> {
   const what = feature.trim()
   if (!what) throw new CommandError('say what to build: factory new "<feature>"')
   const cfg = loadConfig(repo)
   await deps.gh.preflight()
-  if (!(await hasTmux(deps.exec))) throw new Error('tmux is not installed')
   await deps.git.ensureExcluded()
 
+  const base = await step(deps, 'base', () => baseFor(o, cfg.base, deps))
+  deps.log(ok(`base ${base}`))
   const named = await nameBranch(what, cfg, deps.exec, repo)
   const { id, branch } = await step(deps, 'job', () => claim(repo, named, cfg.docs.requirements, deps))
   deps.log(ok(`job ${id} on ${branch}`))
   const paths = jobPaths(repo, id)
   let worktree = false
   try {
-    await step(deps, 'worktree', () => deps.git.createWorktree(branch, paths.worktree, cfg.base))
+    await step(deps, 'worktree', () => deps.git.createWorktree(branch, paths.worktree, base))
     worktree = true
     deps.log(ok(`worktree ${paths.worktree}`))
     for (const cmd of cfg.setup) await setup(cmd, paths.worktree, deps)
@@ -45,15 +52,17 @@ export async function newJob(
     throw e
   }
 
-  const job = createJob({ id, branch, feature: what, repo, slot: nextSlot(repo), now: deps.now() })
+  const job = createJob({ id, branch, base, feature: what, repo, slot: nextSlot(repo), now: deps.now() })
   saveJob(paths.jobFile, job, deps.now())
-  appendActivity(paths.activityLog, 'created', deps.now())
-  await step(deps, 'tmux session', () => deps.spawner.ensureSession(id, paths.worktree, driverCommand(id)))
-  deps.log(ok(`tmux session factory-${id}`))
-  if (!(o.attach && (await enterSession(id, deps.exec, o.terminal ?? realTerminal)))) {
-    deps.log(`Answer the grill: factory attach ${id}`)
-  }
+  appendActivity(paths.activityLog, `created on ${base}`, deps.now())
   return job
+}
+
+/** --base, else the stacked PR's branch, else the repo's configured base, else origin's default branch. */
+async function baseFor(o: NewOptions, configured: string | null, deps: Deps): Promise<string> {
+  if (o.base) return o.base
+  if (o.stack) return deps.gh.prHead(o.stack)
+  return configured ?? deps.gh.defaultBranch()
 }
 
 /** Runs `fn`; on failure prints `✗ <name>: <message>` and throws a ReportedError. */
@@ -113,5 +122,7 @@ async function rollback(repo: string, id: string, branch: string | null, deps: D
 }
 
 export async function newCommand(args: Args, cli: Cli, repo: string): Promise<void> {
-  await newJob(repo, args.pos.join(' '), cli.deps(repo), { attach: args.flags['no-attach'] !== true, terminal: cli.terminal })
+  const value = (name: string) => (typeof args.flags[name] === 'string' ? (args.flags[name] as string) : undefined)
+  const job = await newJob(repo, args.pos.join(' '), cli.deps(repo), { base: value('base'), stack: value('stack') })
+  await relayGrill(repo, job.id, cli, null)
 }

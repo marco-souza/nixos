@@ -1,5 +1,6 @@
 {
-  "base": "main",
+  "base": null,
+  "prTitle": null,
   "setup": [],
   "docs": {
     "requirements": "docs/requirements",

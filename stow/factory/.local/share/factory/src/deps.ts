@@ -4,7 +4,7 @@ import { realExec, type Exec } from './exec'
 import { Git, GitHub } from './git'
 import { notify } from './notify'
 import { PACKAGE_DIR } from './paths'
-import { InlineSpawner, TmuxSpawner, type Spawner } from './spawn'
+import { InlineSpawner, ProcessSpawner, type Spawner } from './spawn'
 
 /** Everything the driver touches outside its own job folder. Tests swap these for fakes. */
 export interface Deps {
@@ -19,12 +19,14 @@ export interface Deps {
   now(): Date
   sleep(ms: number): Promise<void>
   log(line: string): void
+  /** How often a running agent logs a heartbeat line; unset: never. */
+  heartbeatMs?: number
 }
 
 export function makeDeps(repo: string, o: { inline?: boolean } = {}): Deps {
   return {
     exec: realExec,
-    spawner: o.inline ? new InlineSpawner(realExec) : new TmuxSpawner(realExec),
+    spawner: o.inline ? new InlineSpawner(realExec) : new ProcessSpawner(repo),
     git: new Git(realExec, repo),
     gh: new GitHub(realExec, repo),
     rolesDir: join(PACKAGE_DIR, 'roles'),
@@ -32,5 +34,6 @@ export function makeDeps(repo: string, o: { inline?: boolean } = {}): Deps {
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),
     log: (line) => console.log(line),
+    heartbeatMs: 30_000,
   }
 }

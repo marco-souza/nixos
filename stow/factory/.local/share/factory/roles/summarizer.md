@@ -42,7 +42,8 @@ Line 1 is `# <PR title>`: one line in the repo's commit or pull request
 title convention from `AGENTS.md` (for example
 `<type>: <lowercase summary>`), or, without one, in the style
 `git log --oneline origin/<base>` shows. Say what the change does, in under
-72 characters.
+72 characters. When the Assignment says the factory formats the title, write
+only the summary part: no type, ticket or other prefix.
 
 Then the body, in this order:
 

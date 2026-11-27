@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path'
 import { approveCommand } from './commands/approve'
-import { attachCommand, realTerminal } from './commands/attach'
+import { answerCommand } from './commands/answer'
 import { dashboardCommand } from './commands/dashboard'
 import { discardCommand } from './commands/discard'
 import { feedbackCommand } from './commands/feedback'
 import { logsCommand } from './commands/logs'
 import { newCommand } from './commands/new'
 import { runCommand } from './commands/run'
-import { fail, ReportedError, type Args, type Cli } from './commands/shared'
+import { fail, realTerminal, ReportedError, type Args, type Cli } from './commands/shared'
 import { statusCommand } from './commands/status'
+import { unblockCommand } from './commands/unblock'
 import type { Harness } from './config'
 import { makeDeps } from './deps'
 import { realExec } from './exec'
@@ -32,16 +33,16 @@ const EX = 'rate-limit-signup-form'
 // In help order.
 const COMMANDS: Record<string, Spec> = {
   new: {
-    usage: 'new "<feature>" [--no-attach]', about: 'Start a job and answer its requirements grill',
-    example: 'factory new "Rate limit the signup form"', args: [1, Infinity], flags: ['no-attach'], run: newCommand,
+    usage: 'new "<feature>"', about: 'Start a job; prints the first grill question. --base <branch> or --stack <PR#> sets its base',
+    example: 'factory new --stack 123 "Rate limit the signup form"', args: [1, Infinity], flags: ['base', 'stack'], run: newCommand,
+  },
+  answer: {
+    usage: 'answer <id> [<text>…]', about: 'Answer the pending grill question; prints the next one',
+    example: `factory answer ${EX} "Count per IP"`, args: [1, Infinity], flags: [], run: answerCommand,
   },
   status: {
     usage: 'status [<id>] [--json]', about: 'Every job and what it needs; or one job',
     example: `factory status ${EX}`, args: [0, 1], flags: ['json'], run: statusCommand,
-  },
-  attach: {
-    usage: 'attach <id>', about: "Open the job's tmux session",
-    example: `factory attach ${EX}`, args: [1, 1], flags: [], run: attachCommand,
   },
   logs: {
     usage: 'logs <id> [<role>] [-f]', about: "An agent's log (default: the latest)",
@@ -54,6 +55,10 @@ const COMMANDS: Record<string, Spec> = {
   feedback: {
     usage: 'feedback <id> [<note>…]', about: 'Send new PR comments and a note; new cycle',
     example: `factory feedback ${EX} "Count per IP"`, args: [1, Infinity], flags: [], run: feedbackCommand,
+  },
+  unblock: {
+    usage: 'unblock <id> <decision>…', about: 'Settle what a failed step stopped on; reruns that step',
+    example: `factory unblock ${EX} "Use the staging account"`, args: [2, Infinity], flags: [], run: unblockCommand,
   },
   run: {
     usage: 'run <id> [--inline]', about: '(Re)start the driver; retries a failed step',
@@ -71,13 +76,13 @@ const COMMANDS: Record<string, Spec> = {
 }
 
 /** Flags that take a value. */
-const VALUED = new Set(['repo', 'port', 'format'])
+const VALUED = new Set(['repo', 'port', 'format', 'base', 'stack'])
 
 export function help(): string {
   const rows = [...Object.values(COMMANDS), { usage: 'help', about: 'This help', example: 'factory help' }]
   const width = Math.max(...rows.map((r) => r.usage.length)) + 2
   return [
-    'factory: one job per feature, from the requirements grill to a reviewed PR',
+    'factory: one job per feature, from the requirements grill to a reviewed PR or a report',
     '',
     'Usage: factory <command> [args] [--repo <path>]',
     '',
@@ -147,7 +152,9 @@ export async function main(argv: string[], cli: Cli = realCli): Promise<number> 
     }
     const [min, max] = spec.args
     if (args.pos.length < min || args.pos.length > max) throw new CommandError(`usage: factory ${spec.usage}`)
-    const repo = await findRepo(resolve(cli.cwd, String(args.flags.repo ?? '.')), realExec)
+    const { repo, linked } = await findRepo(resolve(cli.cwd, String(args.flags.repo ?? '.')), realExec)
+    // Jobs live in the main checkout and read its .factory.json; acting on another silently is how jobs land on the wrong base.
+    if (linked && args.flags.repo !== undefined) throw new CommandError(`--repo is a linked worktree: pass its main checkout, ${repo} (and --base <branch>)`)
     return (await spec.run(args, cli, repo)) ?? 0
   } catch (e) {
     if (!(e instanceof ReportedError)) fail(cli, e)

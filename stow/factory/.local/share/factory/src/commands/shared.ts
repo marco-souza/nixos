@@ -24,12 +24,14 @@ export interface Cli {
 }
 
 export interface Terminal {
-  /** Running inside tmux. */
-  tmux: boolean
   /** stdin and stdout are a terminal. */
   tty: boolean
-  /** Runs `cmd` on this terminal (tmux attach) and returns its exit code. */
-  handOver(cmd: string[]): number
+}
+
+export const realTerminal: Terminal = {
+  get tty() {
+    return Boolean(process.stdin.isTTY && process.stdout.isTTY)
+  },
 }
 
 /** An error the command already printed; the CLI only exits 1. */
@@ -55,7 +57,7 @@ export function transition(repo: string, id: string, command: Command, deps: Dep
   return next
 }
 
-/** Restarts (or starts) the driver in the job's tmux session. */
+/** Restarts (or starts) the job's driver in the background. */
 export function restartDriver(job: Job, deps: Deps): Promise<void> {
   return deps.spawner.respawnDriver(job.id, job.worktree, driverCommand(job.id))
 }

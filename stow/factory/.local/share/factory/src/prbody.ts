@@ -12,6 +12,8 @@ type Group = (typeof GROUPS)[number]
 
 export const STEPS: { stage: Stage; label: string; group: Group }[] = [
   { stage: 'requirements', label: 'requirements', group: 'Discovery' },
+  { stage: 'preflight', label: 'access check', group: 'Discovery' },
+  { stage: 'report', label: 'report', group: 'Building' },
   { stage: 'tech-discovery', label: 'tech discovery', group: 'Discovery' },
   { stage: 'design', label: 'design', group: 'Discovery' },
   { stage: 'discovery-review', label: 'AI review', group: 'Discovery' },
@@ -27,6 +29,17 @@ export const STEPS: { stage: Stage; label: string; group: Group }[] = [
   { stage: 'human-review', label: 'your review', group: 'Deploy' },
   { stage: 'finalize', label: 'ready', group: 'Deploy' },
 ]
+
+const REPORT_STAGES: Stage[] = ['requirements', 'preflight', 'report', 'human-review', 'finalize']
+
+/** The steps a job goes through: a report job skips the PR's stages, a PR job the report. */
+export function stepsFor(job: Pick<Job, 'deliverable'>): typeof STEPS {
+  const report = job.deliverable === 'report'
+  return STEPS.filter((s) => (report ? REPORT_STAGES.includes(s.stage) : s.stage !== 'report'))
+}
+
+/** The groups that have a step in `steps`, in order. */
+export const groupsOf = (steps: typeof STEPS): Group[] => GROUPS.filter((g) => steps.some((s) => s.group === g))
 
 const DOC_ORDER = ['requirements', 'tech discovery', 'design', 'spec', 'test plan']
 
@@ -53,12 +66,12 @@ function headline(job: Job): string {
   return `⏳ **${step.group}: ${step.label}${counter(job, job.stage)}**`
 }
 
-function mark(job: Job, i: number): string {
-  const step = STEPS[i]!
+function mark(job: Job, steps: typeof STEPS, i: number): string {
+  const step = steps[i]!
   if (job.stage === 'done') return '✅'
   if (job.stage === 'discarded') return job.planned && step.group === 'Discovery' ? '✅' : '⬜'
   const current = job.stage === 'needs-human' ? job.resumeStage : job.stage
-  const at = STEPS.findIndex((s) => s.stage === current)
+  const at = steps.findIndex((s) => s.stage === current)
   if (at < 0) return '⬜'
   if (i < at) return '✅'
   if (i > at) return '⬜'
@@ -72,9 +85,10 @@ export function renderStatus(job: Job, cfg: FactoryConfig, docLinks: Record<stri
   if (job.trip > 0) parts.push(`trip ${job.trip}/${cfg.maxTrips + job.extraTrips}`)
   parts.push(headline(job))
 
-  const rows = GROUPS.map((group) => {
-    const steps = STEPS.flatMap((s, i) =>
-      s.group === group ? [`${mark(job, i)} ${s.label}${s.stage === job.stage ? counter(job, s.stage) : ''}`] : [],
+  const all = stepsFor(job)
+  const rows = groupsOf(all).map((group) => {
+    const steps = all.flatMap((s, i) =>
+      s.group === group ? [`${mark(job, all, i)} ${s.label}${s.stage === job.stage ? counter(job, s.stage) : ''}`] : [],
     )
     return `| ${group} | ${steps.join(' · ')} |`
   })

@@ -3,7 +3,8 @@ import type { Job, Stage, TripRecord, WaitingFor } from './job'
 export type Outcome =
   | { kind: 'done'; stage: Stage; verdict?: string; reworkStep?: 'tech-discovery' | 'design'; humanQuestions?: boolean; reasonFile?: string; questionsFile?: string }
   | { kind: 'failed'; stage: Stage; reason: string }
-export type Command = { kind: 'approve' } | { kind: 'feedback'; file: string } | { kind: 'retry' } | { kind: 'discard' }
+export type Command =
+  | { kind: 'approve' } | { kind: 'feedback'; file: string } | { kind: 'retry' } | { kind: 'unblock'; file: string } | { kind: 'discard' }
 export class CommandError extends Error {}
 export interface Limits { maxTrips: number; maxDiscoveryLoops: number }
 
@@ -11,7 +12,8 @@ type Done = Extract<Outcome, { kind: 'done' }>
 
 /** Stages whose `done` always leads to the same next stage. */
 const NEXT: Partial<Record<Stage, Stage>> = {
-  requirements: 'tech-discovery',
+  requirements: 'preflight',
+  report: 'human-review',
   'tech-discovery': 'design',
   design: 'discovery-review',
   planning: 'build',
@@ -24,8 +26,8 @@ const NEXT: Partial<Record<Stage, Stage>> = {
   finalize: 'done',
 }
 
-/** Stages the driver stops at. `requirements` is not one: the driver runs the grill. */
-const WAITING: Stage[] = ['human-review', 'needs-human', 'done', 'discarded']
+/** Stages the driver stops at. `requirements` is one: the grill is a conversation `factory answer` drives, not the driver. */
+const WAITING: Stage[] = ['requirements', 'human-review', 'needs-human', 'done', 'discarded']
 
 export function isWaiting(job: Job): boolean {
   return WAITING.includes(job.stage)
@@ -45,6 +47,8 @@ export function applyCommand(job: Job, c: Command, now: Date): Job {
 function next(job: Job, o: Outcome, limits: Limits): Job {
   if (o.kind === 'failed') return needsHuman(job, 'failure', o.stage, { reason: o.reason })
   switch (o.stage) {
+    case 'preflight':
+      return goTo(job, job.deliverable === 'report' ? 'report' : 'tech-discovery')
     case 'design':
       if (o.humanQuestions) return discoveryLoop(job, 'requirements', { questionsFile: o.questionsFile ?? null }, limits)
       break
@@ -146,6 +150,7 @@ function command(job: Job, c: Command): Job {
         ...cleared, cycle, reasonFile: c.file, questionsFile: null, feedbackCount: job.feedbackCount + 1, ready: null,
         stoppedReason: null, envRetries: 0, extraTrips: 0, discoveryLoops: 0, extraDiscoveryLoops: 0,
       }
+      if (job.deliverable === 'report') return goTo(job, 'report', { ...patch, trip: 0 })
       if (job.planned) return goTo(job, 'planning', { ...patch, ...newTrip(job.trips, cycle, 1) })
       return goTo(job, 'requirements', { ...patch, trip: 0 })
     }
@@ -165,6 +170,9 @@ function command(job: Job, c: Command): Job {
       if (job.capHit === 'discovery') return goTo(job, to, { ...fresh, extraDiscoveryLoops: job.extraDiscoveryLoops + 1 })
       return goTo(job, to, fresh)
     }
+    case 'unblock':
+      // A retry, with the human's decision as an input of every agent from now on.
+      return { ...command(job, { kind: 'retry' }), decisions: [...job.decisions, c.file] }
     case 'discard':
       if (job.stage === 'discarded') throw new CommandError(`nothing to discard: ${job.id} is already discarded`)
       return goTo(job, 'discarded')

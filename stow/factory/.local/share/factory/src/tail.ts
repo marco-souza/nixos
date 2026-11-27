@@ -153,6 +153,31 @@ function piEvent(ev: any, width: number): string | null {
   return null
 }
 
+/** `<tool>  <first argument>` of the latest tool call in a raw agent log; null when there is none. */
+export function lastTool(log: string, format: Harness, width = 80): string | null {
+  const lines = log.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let ev: any
+    try {
+      ev = JSON.parse(lines[i]!)
+    } catch {
+      continue
+    }
+    let name: unknown
+    let input: unknown
+    if (format === 'claude' && ev?.type === 'assistant' && Array.isArray(ev.message?.content)) {
+      const use = ev.message.content.findLast((b: any) => b?.type === 'tool_use')
+      if (use) [name, input] = [use.name, use.input]
+    } else if (format === 'pi' && ev?.type === 'tool_execution_start') {
+      ;[name, input] = [ev.toolName, ev.args]
+    }
+    if (name === undefined) continue
+    const arg = firstArg(input)
+    return truncate(`${clean(String(name))}${arg ? `  ${arg}` : ''}`, width)
+  }
+  return null
+}
+
 /**
  * Formatter for one stream. Holds the tool_use id -> name map, so a later
  * is_error tool_result can say which tool failed; entries go when the result arrives.
