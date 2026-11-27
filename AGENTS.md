@@ -14,16 +14,16 @@ add a machine. Read it first.
 | `modules/nixos/desktop.nix`  | COSMIC desktop, audio, bluetooth, GUI apps                      |
 | `hosts/<name>/`              | `default.nix` + `hardware-configuration.nix` for each machine   |
 | `pkgs/`                      | Local derivations for software that isn't in nixpkgs (e.g. `orca-ide.nix`) |
-| `stow/factory/`              | The factory CLI (Bun + TypeScript), its roles and dashboard      |
+| `stow/factory/`              | The factory CLI (Bun + TypeScript), its roles and dashboard     |
 | `stow/<package>/`            | Dotfiles. Each package mirrors `$HOME` (`stow/zsh/.zshrc` → `~/.zshrc`) |
 | `stow.sh`                    | Wrapper around `stow` (`./stow.sh restow zsh`)                  |
 | `Makefile`                   | `switch`, `build`, `diff`, `update`, `check`, `mac`, `hardware` |
 
 Agent configs live in stow packages too:
 
-- `stow/claude/.claude/`: Claude Code settings, `agents/`, `skills/`, and the
+- `stow/claude/.claude/`: Claude Code settings, `skills/`, and the
   `marco-plugins` marketplace.
-- `stow/pi/.pi/agent/`: pi agent settings, `agents/`, `skills/`, and
+- `stow/pi/.pi/agent/`: pi agent settings, `skills/`, and
   `scripts/task-pipeline` (a Bun + TypeScript CLI).
 
 The factory lives in `stow/factory/`; the Claude and pi `factory` skills only wrap its CLI.
@@ -34,7 +34,7 @@ Nothing to install. Nix fetches everything it needs on evaluation. Only if you
 touch `stow/pi/.pi/agent/scripts/task-pipeline/` run `bun install` in that folder.
 `stow/factory` needs no install to run tests (`bun install` only for editor types).
 
-The symlinks in `$HOME` (`~/.claude/skills/factory`, `~/.claude/agents`,
+The symlinks in `$HOME` (`~/.claude/skills/factory`,
 `~/.pi/agent/...`) point at the **main checkout**, so edits in a worktree aren't
 live until they're merged. Never run `./stow.sh`, `make switch`, `make boot`,
 `make mac`, `make update` or `make hardware` from an agent: they change the

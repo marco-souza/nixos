@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -549,6 +549,13 @@ describe('cli', () => {
     const t = await setup()
     expect(await main(['status', '--bogus'], t.cli)).toBe(1)
     expect(t.err).toEqual(['factory: unknown option --bogus for status (see: factory help)'])
+  })
+
+  test('-- ends the options, so a feature can start with a dash', async () => {
+    const t = await setup({ branches: true })
+    expect(await main(['new', '--no-attach', '--repo', t.repo, '--', '-x feature'], t.cli)).toBe(0)
+    const [id] = readdirSync(join(t.repo, '.factory/jobs'))
+    expect(loadJob(jobPaths(t.repo, id!).jobFile)).toMatchObject({ feature: '-x feature' })
   })
 
   test('help lists every command in order, each with an example', async () => {

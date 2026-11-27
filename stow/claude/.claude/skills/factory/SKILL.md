@@ -14,10 +14,10 @@ their nixos checkout (you never run it).
 
 | User types | Run |
 | --- | --- |
-| `/factory <feature>` | `factory new "<feature>" --no-attach`, then the attach step below |
+| `/factory <feature>` | `factory new --no-attach -- "<feature>"`, then the attach step below |
 | `/factory status` | `factory status` |
 | `/factory approve <job>` | `factory approve <job>` |
-| `/factory feedback <job> [<note>]` | `factory feedback <job> "<note>"` |
+| `/factory feedback <job> [<note>]` | `factory feedback <job> -- "<note>"` |
 | `/factory run <job>` | `factory run <job>` |
 | `/factory logs <job> [<role>]` | `factory logs <job> [<role>]` |
 | `/factory discard <job>` | confirm with the user first, then `factory discard <job> --yes` |
