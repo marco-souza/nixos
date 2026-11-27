@@ -35,7 +35,11 @@ export async function runCommand(args: Args, cli: Cli, repo: string): Promise<nu
     }
     cli.out(`${id}: retrying from ${job.stage}`)
   }
-  if (inline) return drive(repo, id, deps, cli)
+  if (inline) {
+    // Inline agents get no terminal, and the grill is a conversation with the human.
+    if (job.stage === 'requirements') throw new CommandError('the grill needs a terminal; run without --inline')
+    return drive(repo, id, deps, cli)
+  }
   await restartDriver(job, deps)
   cli.out(ok(`driver started in tmux session factory-${id}`))
   printNext(job, cli)

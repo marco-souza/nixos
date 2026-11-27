@@ -446,6 +446,16 @@ describe('run', () => {
     expect(t.out.at(-1)).toBe(`${ID}: next: factory approve ${ID}   or   factory feedback ${ID} "…"`)
   })
 
+  test('--inline refuses the grill, which needs a terminal', async () => {
+    const t = await setup()
+    await t.job()
+    expect(await t.run('run', ID, '--inline')).toBe(1)
+    expect(t.err).toEqual(['factory: the grill needs a terminal; run without --inline'])
+    expect(t.load().stage).toBe('requirements')
+    expect(t.spawner.calls).toEqual([])
+    expect(existsSync(t.paths.runDir)).toBe(false)
+  })
+
   test('run on an escalation prints why it cannot retry and what to do instead', async () => {
     const t = await setup()
     await t.job({ stage: 'needs-human', waitingFor: 'escalation', resumeStage: 'test-planning' })
