@@ -24,6 +24,7 @@ function role(over: Partial<Role> = {}): Role {
   }
 }
 const files = { system: '/j/run/sys.md', task: '/j/run/task.md' }
+const JOB_DIR = '/j'
 
 describe('shq', () => {
   test('escapes single quotes', () => expect(shq("it's")).toBe(`'it'\\''s'`))
@@ -59,41 +60,46 @@ describe('buildCommand', () => {
   const claude = { harness: 'claude' as const, model: 'opus' }
   const task = `"$(cat '/j/run/task.md')"`
   test('claude headless', () => {
-    expect(buildCommand(role(), claude, files)).toBe(
-      `claude -p ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent' --output-format stream-json --verbose`,
+    expect(buildCommand(role(), claude, files, JOB_DIR)).toBe(
+      `claude -p ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --add-dir '/j' --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent' --output-format stream-json --verbose`,
     )
   })
   test('claude interactive', () => {
-    expect(buildCommand(role({ interactive: true }), claude, files)).toBe(
-      `claude ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent'`,
+    expect(buildCommand(role({ interactive: true }), claude, files, JOB_DIR)).toBe(
+      `claude ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --add-dir '/j' --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent'`,
     )
   })
   test('claude browser adds the shipped playwright server and its tools', () => {
-    const cmd = buildCommand(role({ browser: true }), claude, files)
+    const cmd = buildCommand(role({ browser: true }), claude, files, JOB_DIR)
     expect(cmd).toContain(`--strict-mcp-config --mcp-config ${shq(PLAYWRIGHT_MCP_CONFIG)} --allowedTools`)
     expect(cmd).toContain(`--allowedTools 'Read,Grep,Glob,Bash,Write,${PLAYWRIGHT_TOOLS.join(',')}'`)
   })
   test('only browser roles get an mcp config', () => {
-    expect(buildCommand(role(), claude, files)).not.toContain('--mcp-config')
-    expect(buildCommand(role({ interactive: true }), claude, files)).not.toContain('--mcp-config')
+    expect(buildCommand(role(), claude, files, JOB_DIR)).not.toContain('--mcp-config')
+    expect(buildCommand(role({ interactive: true }), claude, files, JOB_DIR)).not.toContain('--mcp-config')
   })
   test('pi headless', () => {
-    expect(buildCommand(role(), { harness: 'pi', model: 'm' }, files)).toBe(
+    expect(buildCommand(role(), { harness: 'pi', model: 'm' }, files, JOB_DIR)).toBe(
       `pi -p --append-system-prompt '/j/run/sys.md' --model 'm' --tools 'read,grep,find,ls,bash,write' --mode json ${task}`,
     )
   })
   test('pi headless without model', () => {
-    expect(buildCommand(role(), { harness: 'pi', model: null }, files)).toBe(
+    expect(buildCommand(role(), { harness: 'pi', model: null }, files, JOB_DIR)).toBe(
       `pi -p --append-system-prompt '/j/run/sys.md' --tools 'read,grep,find,ls,bash,write' --mode json ${task}`,
     )
   })
   test('pi interactive', () => {
-    expect(buildCommand(role({ interactive: true }), { harness: 'pi', model: 'm' }, files)).toBe(
+    expect(buildCommand(role({ interactive: true }), { harness: 'pi', model: 'm' }, files, JOB_DIR)).toBe(
       `pi --append-system-prompt '/j/run/sys.md' --model 'm' --tools 'read,grep,find,ls,bash,write' ${task}`,
     )
   })
+  test('every claude role may use the job folder; pi needs no flag', () => {
+    expect(buildCommand(role({ browser: true }), claude, files, JOB_DIR)).toContain(`--add-dir '/j' --strict-mcp-config`)
+    expect(buildCommand(role(), { harness: 'pi', model: 'm' }, files, JOB_DIR)).not.toContain('--add-dir')
+  })
   test('paths with quotes are escaped', () => {
-    expect(buildCommand(role(), claude, { system: "/a'b/s.md", task: '/t.md' })).toContain(`'/a'\\''b/s.md'`)
+    expect(buildCommand(role(), claude, { system: "/a'b/s.md", task: '/t.md' }, "/j'x")).toContain(`'/a'\\''b/s.md'`)
+    expect(buildCommand(role(), claude, files, "/j'x")).toContain(`--add-dir '/j'\\''x'`)
   })
 })
 
@@ -153,7 +159,7 @@ describe('renderTaskPrompt', () => {
     const prompt = renderTaskPrompt({ ...mk(), job: j, paths: jobPaths('/r', j.id) })
     const taskFile = join(dir, 'task.md')
     writeFileSync(taskFile, prompt)
-    const cmd = buildCommand(role(), { harness: 'claude', model: 'opus' }, { system: join(dir, 'sys.md'), task: taskFile })
+    const cmd = buildCommand(role(), { harness: 'claude', model: 'opus' }, { system: join(dir, 'sys.md'), task: taskFile }, dir)
     expect(prompt).toContain(feature)
     expect(cmd).not.toContain('rm -rf')
     expect(cmd).not.toContain('`')

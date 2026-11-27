@@ -79,11 +79,15 @@ const PI_TOOLS: Record<NeutralTool, string[]> = {
   read: ['read'], grep: ['grep'], glob: ['find', 'ls'], bash: ['bash'], edit: ['edit'], write: ['write'],
 }
 
-/** A bash command line. Prompt text is read from files, never interpolated. */
+/**
+ * A bash command line. Prompt text is read from files, never interpolated. `jobDir` holds the role's inputs and
+ * outputs, outside its working directory (the worktree).
+ */
 export function buildCommand(
   role: Role,
   h: { harness: Harness; model: string | null },
   files: { system: string; task: string },
+  jobDir: string,
 ): string {
   const task = `"$(cat ${shq(files.task)})"`
   const headless = !role.interactive
@@ -100,6 +104,8 @@ export function buildCommand(
       '--append-system-prompt-file', shq(files.system),
       ...(h.model ? ['--model', shq(h.model)] : []),
       '--permission-mode', 'auto',
+      // Variadic like --mcp-config: each must be followed by another option, never by the prompt.
+      '--add-dir', shq(jobDir),
       // Only the servers named here: the user's MCP connectors stay out of reach of unattended agents.
       '--strict-mcp-config',
       ...(role.browser ? ['--mcp-config', shq(PLAYWRIGHT_MCP_CONFIG)] : []),
