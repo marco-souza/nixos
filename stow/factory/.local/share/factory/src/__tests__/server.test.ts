@@ -89,12 +89,19 @@ async function setup() {
 }
 
 describe('dashboard server', () => {
-  test('binds 127.0.0.1 and serves a placeholder page', async () => {
+  test('binds 127.0.0.1 and serves dashboard.html', async () => {
     const t = await setup()
     expect(t.server.hostname).toBe('127.0.0.1')
     const res = await t.get('/')
     expect(res.status).toBe(200)
-    expect(await res.text()).toContain('Factory dashboard: UI not built yet')
+    expect(await res.text()).toMatch(/<title>Software Factory – factory-server-\w+<\/title>/)
+  })
+
+  test('serves a placeholder page when the html file is missing', async () => {
+    const t = await setup()
+    const server = startServer(t.repo, t.deps, { port: 0, htmlFile: join(t.repo, 'missing.html') })
+    cleanups.push(() => server.stop(true))
+    expect(await (await fetch(`http://127.0.0.1:${server.port}/`)).text()).toContain('Factory dashboard: UI not built yet')
   })
 
   test('/ fills {{PROJECT}} with the escaped repo folder name', async () => {
