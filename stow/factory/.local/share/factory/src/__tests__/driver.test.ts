@@ -302,7 +302,7 @@ describe('runJob', () => {
     const t = await setup({ script: { 'tech-discoverer': [{ output: null }] } })
     expect(await t.run()).toBe('waiting')
     expect(t.load().stage).toBe('human-review')
-    expect(t.spawner.windows('tech-discoverer')).toEqual(['tech-discoverer', 'tech-discoverer·2'])
+    expect(t.spawner.windows('tech-discoverer')).toEqual(['tech-discoverer', 'tech-discoverer-2'])
     expect(t.activity()).toContain(`tech-discoverer: no output at docs/tech-discovery/${ID}.md`)
   })
 
@@ -324,7 +324,7 @@ describe('runJob', () => {
     const job = t.load()
     expect(job.reason).toBe('tech-discoverer: timed out after 15 min')
     expect(job.running).toEqual([])
-    expect(t.events.filter((e) => e.startsWith('kill'))).toEqual(['kill tech-discoverer', 'kill tech-discoverer·2'])
+    expect(t.events.filter((e) => e.startsWith('kill'))).toEqual(['kill tech-discoverer', 'kill tech-discoverer-2'])
   })
 
   test('BLOCKED build goes to needs-human with the BLOCKED line', async () => {
@@ -449,10 +449,10 @@ describe('runJob', () => {
     t.write(t.doc('requirements'), canned('requirements', '', ''))
     await Bun.sleep(20) // older than the visit, also with coarse file timestamps
     expect(await t.run()).toBe('waiting')
-    expect(t.spawner.windows('requirements')).toEqual(['requirements', 'requirements·2'])
+    expect(t.spawner.windows('requirements')).toEqual(['requirements', 'requirements-2'])
     // The first grill ran until it exited instead of being dropped while the human was in it.
     expect(t.events.indexOf('wait requirements')).toBeGreaterThan(-1)
-    expect(t.events.indexOf('wait requirements')).toBeLessThan(t.events.indexOf('start requirements·2'))
+    expect(t.events.indexOf('wait requirements')).toBeLessThan(t.events.indexOf('start requirements-2'))
     expect(t.activity()).toContain(`requirements: docs/requirements/${ID}.md was not written`)
   })
 
@@ -467,7 +467,7 @@ describe('runJob', () => {
     await Bun.sleep(20) // older than the visit, also with coarse file timestamps
     expect(await t.run()).toBe('waiting')
     expect(t.spawner.requests.map((r) => r.window).slice(0, 5)).toEqual([
-      'discovery-reviewer', 'requirements', 'tech-discoverer', 'designer', 'discovery-reviewer·2',
+      'discovery-reviewer', 'requirements', 'tech-discoverer', 'designer', 'discovery-reviewer-2',
     ])
     expect(t.task('requirements')).toContain(`Inputs: ${t.paths.discoveryReview(1)}`)
     expect(t.load()).toMatchObject({ stage: 'human-review', discoveryLoops: 1 })
@@ -512,7 +512,7 @@ describe('runJob', () => {
     const job = t.load()
     expect(job).toMatchObject({ stage: 'human-review', envRetries: 1, trip: 1 })
     expect(job.trips[0].validations).toEqual({ e2e: 'PASS', user: 'PASS' })
-    expect(t.spawner.windows('validator-e2e')).toEqual(['validator-e2e', 'validator-e2e·2'])
+    expect(t.spawner.windows('validator-e2e')).toEqual(['validator-e2e', 'validator-e2e-2'])
     for (const f of ['validation-e2e.env1.md', 'validation-user.env1.md', 'validation-judge.env1.md', 'validation-judge.md']) {
       expect(existsSync(join(t.paths.tripDir(1), f))).toBe(true)
     }
@@ -597,7 +597,7 @@ describe('runJob', () => {
     expect(req.scriptFile).toBe(join(t.paths.runDir, 'test-planner-1.sh'))
     expect(req.logFile).toBe(join(t.paths.logsDir, 'test-planner-1.log'))
     expect(req.doneFile).toBe(join(t.paths.doneDir, 'test-planner-1'))
-    expect(t.spawner.requests.every((r) => r.command === `fake ${r.window.replace(/·\d+$/, '')}`)).toBe(true)
+    expect(t.spawner.requests.every((r) => r.command === `fake ${r.window.replace(/-\d+$/, '')}`)).toBe(true)
   })
 
   test('feature text with $(…) and quotes appears only in the task file', async () => {
@@ -741,7 +741,7 @@ describe('runJob', () => {
     expect(t.load()).toMatchObject({
       stage: 'needs-human', resumeStage: 'planning', trip: 2, reason: `planner: docs/specs/${ID}.md was not written`,
     })
-    expect(t.spawner.windows('planner')).toEqual(['planner', 'planner·2'])
+    expect(t.spawner.windows('planner')).toEqual(['planner', 'planner-2'])
   })
 
   test('a start that fails mid-group kills the agents already started', async () => {

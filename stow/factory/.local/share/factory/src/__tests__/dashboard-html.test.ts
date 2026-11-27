@@ -9,7 +9,8 @@ const libSrc = /<script id="lib">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? ''
 /** The page's `<script id="lib">`: pure helpers with no DOM, so they run here. */
 function lib(fetch: (url: string, init?: RequestInit) => Promise<Response> = async () => new Response('{}')) {
   if (!libSrc) throw new Error('dashboard.html has no <script id="lib">')
-  return new Function('fetch', `${libSrc}\nreturn { markdown, inline, post, safeUrl }`)(fetch) as {
+  return new Function('fetch', `${libSrc}\nreturn { markdown, inline, post, safeUrl, windowOf }`)(fetch) as {
+    windowOf(log: string): string
     markdown(src: string): string
     inline(src: string): string
     post(path: string, body?: unknown): Promise<unknown>
@@ -18,6 +19,14 @@ function lib(fetch: (url: string, init?: RequestInit) => Promise<Response> = asy
 }
 
 describe('dashboard.html', () => {
+  test('a log names the tmux window its agent ran in (driver.ts: role, then role-n)', () => {
+    const { windowOf } = lib()
+    expect(windowOf('reviewer-code-1')).toBe('reviewer-code')
+    expect(windowOf('reviewer-code-2')).toBe('reviewer-code-2')
+    expect(windowOf('validator-e2e-1')).toBe('validator-e2e')
+    expect(windowOf('validator-e2e-12')).toBe('validator-e2e-12')
+  })
+
   test('loads nothing from another host', () => {
     const urls = [
       ...html.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)\s*=\s*["']?([^"'\s>]+)/gi),

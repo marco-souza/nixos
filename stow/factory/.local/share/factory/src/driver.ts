@@ -285,7 +285,8 @@ async function startAgent(c: Ctx, s: AgentSpec): Promise<Attempt> {
   writeFileSync(files.system, `${role.body}\n`)
   const prompt = renderTaskPrompt({ job, paths, cfg: c.cfg, assignment: s.assignment, output: s.output, inputs: s.inputs ?? [], target: s.target ?? null })
   writeFileSync(files.task, `${prompt}\n`)
-  const window = n === 1 ? s.role : `${s.role}·${n}`
+  // ASCII only: tmux targets and terminals handle it everywhere. The dashboard maps logs to windows the same way.
+  const window = n === 1 ? s.role : `${s.role}-${n}`
   const req: SpawnRequest = {
     jobId: job.id,
     window,

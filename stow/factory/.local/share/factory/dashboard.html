@@ -655,6 +655,12 @@ async function post(path, body) {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
   return data
 }
+
+/** The tmux window a log's agent runs in (driver.ts): `reviewer-code-1` in `reviewer-code`, `reviewer-code-2` in `reviewer-code-2`. */
+function windowOf(log) {
+  const m = /^(.*)-1$/.exec(log)
+  return m ? m[1] : log
+}
 </script>
 
 <script>
@@ -1505,12 +1511,6 @@ function tripsSide(d, j) {
     if (list.length) groups.push(h('h3', {}, title), ...list.map(([file, label, small]) => pickButton('trips', file, label, { current: file === drawer.pick.trips, small })))
   }
   return [h('nav', { class: 'side', 'aria-label': 'Trip files' }, groups), files]
-}
-
-/** `reviewer-code-2` runs in the window `reviewer-code·2` (driver.ts). */
-const windowOf = (log) => {
-  const m = /^(.*)-(\d+)$/.exec(log)
-  return m ? (m[2] === '1' ? m[1] : `${m[1]}·${m[2]}`) : log
 }
 
 function logsSide(d, j) {
