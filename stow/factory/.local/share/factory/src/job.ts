@@ -39,6 +39,8 @@ export interface Job {
   waitingFor: WaitingFor
   waitingSince: string | null
   reason: string | null
+  /** Why a job the human approved anyway had stopped, for the draft PR's Open section. Null in job.json files from before it. */
+  stoppedReason: string | null
   resumeStage: Stage | null
   capHit: CapHit
   reasonFile: string | null
@@ -83,6 +85,7 @@ export function createJob(args: { id: string; feature: string; repo: string; slo
     waitingFor: 'requirements',
     waitingSince: at,
     reason: null,
+    stoppedReason: null,
     resumeStage: null,
     capHit: null,
     reasonFile: null,
@@ -103,7 +106,7 @@ export function createJob(args: { id: string; feature: string; repo: string; slo
 export function loadJob(file: string): Job | LegacyJob {
   const raw = JSON.parse(readFileSync(file, 'utf8'))
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${file}: not a job object`)
-  if (raw.version === 2) return raw as Job
+  if (raw.version === 2) return { ...raw, stoppedReason: raw.stoppedReason ?? null } as Job
   return {
     legacy: true,
     id: typeof raw.id === 'string' && raw.id ? raw.id : basename(dirname(file)),

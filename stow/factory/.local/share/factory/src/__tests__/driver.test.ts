@@ -569,6 +569,20 @@ describe('runJob', () => {
     expect(t.exec.gh('pr', 'ready')).toEqual([])
   })
 
+  test('a failed job approved anyway: the draft opens with the reason it stopped', async () => {
+    const t = await setup({ stage: 'finalize', patch: { ready: false, stoppedReason: 'trip cap (3) reached' } })
+    t.write(t.doc('specs'), SPEC)
+    expect(await t.run()).toBe('done')
+    expect(t.exec.bodies[0].startsWith([
+      '## Open',
+      '',
+      '- The job stopped: trip cap (3) reached',
+      '- No proof for acceptance criteria 1, 2.',
+      '- Approved without a clean pass: the job had stopped for the human.',
+    ].join('\n'))).toBe(true)
+    expect(t.exec.gh('pr', 'ready')).toEqual([])
+  })
+
   test('commandFor replaces the harness command; the run files stay the same', async () => {
     const t = await setup({ stage: 'test-planning' })
     const seen: string[] = []

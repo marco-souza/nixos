@@ -239,7 +239,7 @@ describe('applyCommand: approve', () => {
   test('an escalation resumes where the judge would have gone', () => {
     const esc = { stage: 'needs-human', waitingFor: 'escalation', waitingSince: earlier.toISOString() } as const
     expect(applyCommand(inTrip({ ...esc, resumeStage: 'test-planning' }), { kind: 'approve' }, now))
-      .toMatchObject({ stage: 'test-planning', waitingFor: null, waitingSince: null, resumeStage: null, capHit: null, reason: null })
+      .toMatchObject({ stage: 'test-planning', waitingFor: null, waitingSince: null, resumeStage: null, capHit: null, reason: null, stoppedReason: null })
     expect(applyCommand(inTrip({ ...esc, resumeStage: 'human-review' }), { kind: 'approve' }, now))
       .toMatchObject({ stage: 'human-review', waitingFor: 'human-review', waitingSince: now.toISOString(), resumeStage: null })
   })
@@ -257,7 +257,10 @@ describe('applyCommand: approve', () => {
       inTrip({ stage: 'needs-human', waitingFor: 'failure', capHit: 'trips', resumeStage: 'planning', reason: 'trip cap (3) reached' }),
       { kind: 'approve' }, now,
     )
-    expect(j).toMatchObject({ stage: 'finalize', ready: false, waitingFor: null, capHit: null, resumeStage: null, reason: null })
+    expect(j).toMatchObject({
+      stage: 'finalize', ready: false, waitingFor: null, capHit: null, resumeStage: null, reason: null,
+      stoppedReason: 'trip cap (3) reached',
+    })
   })
 
   test('anything else has nothing to approve', () => {
@@ -295,6 +298,8 @@ describe('applyCommand: feedback', () => {
       { kind: 'feedback', file: '/f.md' }, now,
     )
     expect(j).toMatchObject({ stage: 'planning', waitingFor: null, resumeStage: null, reason: null, capHit: null, questionsFile: null })
+    const after = applyCommand(inTrip({ stage: 'done', stoppedReason: 'boom' }), { kind: 'feedback', file: '/f.md' }, now)
+    expect(after.stoppedReason).toBeNull()
   })
 
   test('feedback resets the per-cycle counters', () => {
@@ -346,6 +351,11 @@ describe('applyCommand: retry', () => {
   test('a failure resumes the failed stage', () => {
     const j = applyCommand(inTrip({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'build', reason: 'boom' }), { kind: 'retry' }, now)
     expect(j).toMatchObject({ stage: 'build', trip: 1, waitingFor: null, resumeStage: null, reason: null, extraTrips: 0 })
+    const fin = applyCommand(
+      inTrip({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'finalize', reason: 'gh down', stoppedReason: 'boom' }),
+      { kind: 'retry' }, now,
+    )
+    expect(fin).toMatchObject({ stage: 'finalize', stoppedReason: null })
   })
 
   test('an env cap validates again in the same trip', () => {

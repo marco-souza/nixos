@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { appendActivity, createJob, listJobs, loadJob, nextSlot, saveJob, type Job } from '../job'
 import { jobPaths } from '../paths'
 
@@ -22,7 +22,7 @@ describe('job state', () => {
     expect(job).toMatchObject({
       version: 2, stage: 'requirements', waitingFor: 'requirements', cycle: 1, trip: 0, planned: false,
       branch: 'factory/261126-a', worktree: jobPaths(repo, '261126-a').worktree, slot: 1,
-      running: [], trips: [], discovery: [], ready: null, pr: null,
+      running: [], trips: [], discovery: [], ready: null, pr: null, stoppedReason: null,
       createdAt: now.toISOString(), updatedAt: now.toISOString(), waitingSince: now.toISOString(),
     })
   })
@@ -33,6 +33,15 @@ describe('job state', () => {
     const job = make('261126-a', 1, new Date(2026, 10, 26, 9))
     saveJob(file, job, now)
     expect(loadJob(file)).toEqual({ ...job, updatedAt: now.toISOString() })
+  })
+
+  test('a v2 job.json from before stoppedReason loads with it null', () => {
+    const file = jobPaths(repo, '261126-old').jobFile
+    const { stoppedReason, ...old } = make('261126-old', 1, new Date(2026, 10, 26, 9))
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify(old))
+    expect(stoppedReason).toBeNull()
+    expect(loadJob(file)).toEqual({ ...old, stoppedReason: null } as Job)
   })
 
   test('saveJob leaves no .tmp file', () => {

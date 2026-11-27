@@ -137,14 +137,14 @@ function command(job: Job, c: Command): Job {
       if (job.stage !== 'needs-human') throw new CommandError(`nothing to approve: ${job.id} is in ${job.stage}`)
       // Approving an escalation goes on as if the judge had approved.
       if (job.waitingFor === 'escalation') return goTo(job, resumeStage(job), cleared)
-      return goTo(job, 'finalize', { ...cleared, ready: false })
+      return goTo(job, 'finalize', { ...cleared, ready: false, stoppedReason: job.reason })
     case 'feedback': {
       if (job.stage === 'discarded') throw new CommandError(`cannot send feedback: ${job.id} is discarded`)
       // A new cycle: its caps start over.
       const cycle = job.cycle + 1
       const patch: Partial<Job> = {
         ...cleared, cycle, reasonFile: c.file, questionsFile: null, feedbackCount: job.feedbackCount + 1, ready: null,
-        envRetries: 0, extraTrips: 0, discoveryLoops: 0, extraDiscoveryLoops: 0,
+        stoppedReason: null, envRetries: 0, extraTrips: 0, discoveryLoops: 0, extraDiscoveryLoops: 0,
       }
       if (job.planned) return goTo(job, 'planning', { ...patch, ...newTrip(job.trips, cycle, 1) })
       return goTo(job, 'requirements', { ...patch, trip: 0 })
@@ -154,14 +154,16 @@ function command(job: Job, c: Command): Job {
         const waiting = job.stage === 'needs-human' ? ` waiting for ${job.waitingFor}` : ''
         throw new CommandError(`nothing to retry: ${job.id} is in ${job.stage}${waiting}`)
       }
+      // Retrying clears what an earlier approval of a failure recorded.
+      const fresh = { ...cleared, stoppedReason: null }
       // QA is back: wait for it and validate again, in the same trip.
-      if (job.capHit === 'env') return goTo(job, 'qa-wait', { ...cleared, envRetries: 0 })
+      if (job.capHit === 'env') return goTo(job, 'qa-wait', { ...fresh, envRetries: 0 })
       if (job.capHit === 'trips') {
-        return goTo(job, 'planning', { ...cleared, extraTrips: job.extraTrips + 1, ...newTrip(job.trips, job.cycle, job.trip + 1) })
+        return goTo(job, 'planning', { ...fresh, extraTrips: job.extraTrips + 1, ...newTrip(job.trips, job.cycle, job.trip + 1) })
       }
       const to = resumeStage(job)
-      if (job.capHit === 'discovery') return goTo(job, to, { ...cleared, extraDiscoveryLoops: job.extraDiscoveryLoops + 1 })
-      return goTo(job, to, cleared)
+      if (job.capHit === 'discovery') return goTo(job, to, { ...fresh, extraDiscoveryLoops: job.extraDiscoveryLoops + 1 })
+      return goTo(job, to, fresh)
     }
     case 'discard':
       if (job.stage === 'discarded') throw new CommandError(`nothing to discard: ${job.id} is already discarded`)

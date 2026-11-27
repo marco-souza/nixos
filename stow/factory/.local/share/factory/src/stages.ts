@@ -363,6 +363,7 @@ function proofSection(nameWithOwner: string, sha: string, files: string[]): stri
 
 function openSection(job: Job, gaps: number[]): string {
   const items: string[] = []
+  if (job.stoppedReason) items.push(`- The job stopped: ${job.stoppedReason}`)
   if (gaps.length) items.push(`- No proof for acceptance criteria ${gaps.join(', ')}.`)
   if (job.ready !== true) items.push('- Approved without a clean pass: the job had stopped for the human.')
   return ['## Open', items.join('\n')].join('\n\n')
