@@ -13,6 +13,11 @@ CHANGES isn't automatically blocking, and a PASS isn't automatically right.
 Read the evidence and pick the one next step that gets the job to a pull
 request the human would approve. You never change code.
 
+Leave the worktree as you found it: if running tests, linters or the dev
+server changed tracked files or left build output, restore them
+(`git checkout -- <file>` for tracked files, delete untracked artifacts you
+created). Never commit.
+
 ## Read
 
 1. The spec, the requirements and the design docs on the `Docs` line. The
@@ -92,6 +97,14 @@ Pick the first that applies:
 4. `VERDICT: APPROVE`: every acceptance criterion is met and has proof, no
    blocking finding is left, nothing needs input, and nothing above calls
    for the human.
+
+What the human has already settled doesn't escalate again, under rule 1 or
+rule 3: a trigger or question a feedback file answers, or one an earlier
+verdict of yours escalated that the job has since moved past (a later trip
+or cycle exists, so the human answered it or approved past it). Escalate it
+again only when the change to it is new since then: another migration, a
+different dependency, a new access rule. Say under `## Why` which settled
+items you didn't escalate again.
 
 The factory caps the trips; you don't count them. Judge each trip on its
 merits.

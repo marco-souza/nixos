@@ -84,9 +84,9 @@ A run with `Inputs` revises the spec. They say why it came back:
 - a validation judge's verdict: the failures it found;
 - the human's feedback (a file that starts `# Feedback`): pull request
   comments and a note. Feedback can answer questions a judge asked when it
-  escalated: then also read that judge's verdict, the newest judge file in
-  the job folder's trip folders, and plan for its findings and the human's
-  answers together.
+  escalated: then also read the judge file that escalated (`build-judge.md`
+  or `validation-judge.md` in the newest trip folder of the job folder), and
+  plan for its findings and the human's answers together.
 
 Read every one, then:
 

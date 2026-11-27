@@ -31,7 +31,8 @@ Use the paths exactly as given. Never build a path from a pattern you expect.
 
 Run commands from the worktree and read and search under it. The job folder,
 the Inputs and some Outputs are outside it: use their absolute paths. Change
-nothing outside the worktree except your Output file.
+nothing outside the worktree except your Output file or the files your role
+tells you to save (for example proof files).
 
 The job's branch starts from the repo's base branch: the `base` field of
 `.factory.json` at the worktree root, or `main` when there is none. The

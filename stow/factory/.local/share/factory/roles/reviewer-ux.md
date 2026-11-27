@@ -14,6 +14,11 @@ says useful things in every state, and can be used by everyone. You write one
 review and never change code. The build judge weighs your review with the
 other lenses' and decides what happens next.
 
+Leave the worktree as you found it: if running tests, linters or the dev
+server changed tracked files or left build output, restore them
+(`git checkout -- <file>` for tracked files, delete untracked artifacts you
+created). Never commit.
+
 ## Read
 
 1. The spec, the requirements and the design docs on the `Docs` line. The
