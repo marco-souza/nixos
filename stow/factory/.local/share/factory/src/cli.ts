@@ -56,8 +56,9 @@ const COMMANDS: Record<string, Spec> = {
     example: `factory feedback ${EX} "Count per IP"`, args: [1, Infinity], flags: [], run: feedbackCommand,
   },
   run: {
-    usage: 'run <id> [--inline]', about: 'Drive the job here; retries a failed step',
-    example: `factory run ${EX}`, args: [1, 1], flags: ['inline'], run: runCommand,
+    usage: 'run <id> [--inline]', about: '(Re)start the driver; retries a failed step',
+    // --here: the driver window's own command (driverCommand), not in the help.
+    example: `factory run ${EX}`, args: [1, 1], flags: ['inline', 'here'], run: runCommand,
   },
   discard: {
     usage: 'discard <id> [--yes]', about: 'Close the PR, delete the branch and worktree',

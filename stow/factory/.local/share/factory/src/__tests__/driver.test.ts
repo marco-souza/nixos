@@ -759,8 +759,8 @@ describe('driver helpers', () => {
     expect(REQUIRED_ROLES).toContain('validator-capacity')
   })
 
-  test('driverCommand runs this bun on the CLI, quoted', () => {
-    expect(driverCommand(ID)).toBe(`'${process.execPath}' '${CLI_PATH}' run '${ID}'`)
+  test('driverCommand runs this bun on the CLI, quoted, driving in the window', () => {
+    expect(driverCommand(ID)).toBe(`'${process.execPath}' '${CLI_PATH}' run '${ID}' --here`)
   })
 
   test('makeDeps picks the spawner', () => {

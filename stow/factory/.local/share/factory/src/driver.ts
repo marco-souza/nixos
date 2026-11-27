@@ -31,9 +31,9 @@ const POLL_MS = 2000
 /** Outputs whose path every visit of their stage reuses: only a write during the current visit counts. */
 const REUSED: OutputKind[] = ['requirements', 'tech-discovery', 'design', 'spec', 'test-plan', 'pr']
 
-/** The command a tmux driver window runs. */
+/** The command a tmux driver window runs: `--here` drives the job in that window. */
 export function driverCommand(id: string): string {
-  return `${shq(process.execPath)} ${shq(CLI_PATH)} run ${shq(id)}`
+  return `${shq(process.execPath)} ${shq(CLI_PATH)} run ${shq(id)} --here`
 }
 
 /** Runs the job until it waits on the human, is done or is discarded. */

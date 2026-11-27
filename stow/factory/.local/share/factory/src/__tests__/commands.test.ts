@@ -89,6 +89,8 @@ async function setup(
   const exec = new FakeExec(o.exec)
   const spawner = new RecordingSpawner()
   const handedOver: string[][] = []
+  /** The options of every `cli.deps()` call. */
+  const depsOpts: { inline?: boolean }[] = []
   const deps: Deps = {
     exec,
     spawner,
@@ -112,11 +114,11 @@ async function setup(
     err: (s) => err.push(s),
     confirm: (q) => (questions.push(q), o.confirm ?? false),
     terminal,
-    deps: () => deps,
+    deps: (_repo, opts) => (depsOpts.push(opts ?? {}), deps),
   }
   const paths = jobPaths(t.repo, ID)
   return {
-    ...t, out, err, questions, ghExec, exec, spawner, deps, cli, terminal, handedOver, paths,
+    ...t, out, err, questions, ghExec, exec, spawner, deps, cli, terminal, handedOver, depsOpts, paths,
     run: (...argv: string[]) => main([...argv, '--repo', t.repo], cli),
     /** Saves job `ID` with `patch`; a real worktree when `worktree` is set. */
     async job(patch: Partial<Job> = {}, worktree = false): Promise<Job> {
@@ -390,14 +392,58 @@ describe('discard', () => {
 })
 
 describe('run', () => {
-  test('run on a failed job retries, then drives it', async () => {
+  test('run on a failed job retries, then restarts the driver in its tmux session', async () => {
+    const t = await setup()
+    await t.job({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'design', reason: 'boom' })
+    expect(await t.run('run', ID)).toBe(0)
+    expect(t.load().stage).toBe('design')
+    expect(t.spawner.calls).toEqual([['respawnDriver', ID, t.paths.worktree, driverCommand(ID)]])
+    expect(t.out).toEqual([
+      `${ID}: retrying from design`,
+      `✓ driver started in tmux session factory-${ID}`,
+      `next: factory attach ${ID} to watch`,
+    ])
+  })
+
+  test('run never drives here: with or without a session, it (re)starts the driver in tmux and returns', async () => {
+    for (const code of [0, 1]) {
+      const t = await setup({ exec: [{ match: ['tmux', 'has-session'], result: { code } }] })
+      await t.job({ stage: 'build', waitingFor: null })
+      expect(await t.run('run', ID)).toBe(0)
+      expect(t.spawner.calls).toEqual([['respawnDriver', ID, t.paths.worktree, driverCommand(ID)]])
+      expect(t.out).toEqual([`✓ driver started in tmux session factory-${ID}`, `next: factory attach ${ID} to watch`])
+      expect(t.depsOpts).toEqual([{ inline: false }])
+    }
+  })
+
+  test('run without tmux refuses before retrying and points at --inline', async () => {
+    const t = await setup({ exec: [{ match: ['tmux', '-V'], result: { code: 127 } }] })
+    await t.job({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'design', reason: 'boom' })
+    expect(await t.run('run', ID)).toBe(1)
+    expect(t.err).toEqual([`factory: tmux is not installed (or drive it here: factory run ${ID} --inline)`])
+    expect(t.load().stage).toBe('needs-human')
+    expect(t.spawner.calls).toEqual([])
+  })
+
+  test('--here (the driver window) drives in this process and never retries', async () => {
+    const t = await setup()
+    await t.job({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'design', reason: 'boom' })
+    expect(await t.run('run', ID, '--here')).toBe(0)
+    expect(t.load().stage).toBe('needs-human')
+    expect(t.spawner.calls).toEqual([])
+    expect(t.depsOpts).toEqual([{ inline: false }])
+    expect(t.out).toEqual([`${ID}: Failed: boom`, `${ID}: next: factory run ${ID} to retry   or   factory discard ${ID}`])
+  })
+
+  test('--inline retries, then drives in this process with the inline spawner', async () => {
     const t = await setup()
     await t.job({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'human-review', reason: 'boom', pr: PR })
-    expect(await t.run('run', ID)).toBe(0)
+    expect(await t.run('run', ID, '--inline')).toBe(0)
     expect(t.load().stage).toBe('human-review')
+    expect(t.depsOpts).toEqual([{ inline: true }])
+    expect(t.spawner.calls).toEqual([])
     expect(t.out).toContain(`${ID}: retrying from human-review`)
     expect(t.out.at(-1)).toBe(`${ID}: next: factory approve ${ID}   or   factory feedback ${ID} "…"`)
-    expect(t.spawner.calls).toEqual([])
   })
 
   test('run on an escalation prints why it cannot retry and what to do instead', async () => {
@@ -406,6 +452,7 @@ describe('run', () => {
     expect(await t.run('run', ID)).toBe(1)
     expect(t.err).toEqual([`factory: nothing to retry: ${ID} is in needs-human waiting for escalation`])
     expect(t.out).toEqual([`next: factory approve ${ID}   or   factory feedback ${ID} "…"`])
+    expect(t.spawner.calls).toEqual([])
   })
 
   test('run on a v1 job refuses', async () => {
@@ -414,14 +461,8 @@ describe('run', () => {
     writeFileSync(join(t.repo, '.factory/jobs/003-old/job.json'), '{"id":"003-old","stage":"review"}')
     expect(await t.run('run', '003-old')).toBe(1)
     expect(t.err).toEqual(['factory: 003-old is a v1 job; v2 cannot drive it'])
-  })
-
-  test('run without a tmux session starts the driver in a new one', async () => {
-    const t = await setup({ exec: [{ match: ['tmux', 'has-session'], result: { code: 1 } }] })
-    await t.job({ stage: 'build', waitingFor: null })
-    expect(await t.run('run', ID)).toBe(0)
-    expect(t.spawner.calls).toEqual([['respawnDriver', ID, t.paths.worktree, driverCommand(ID)]])
-    expect(t.out).toEqual([`✓ driver started in tmux session factory-${ID}`, `next: factory attach ${ID} to watch`])
+    expect(await t.run('run', '003-old', '--here')).toBe(1)
+    expect(t.err.at(-1)).toBe('factory: 003-old is a v1 job; v2 cannot drive it')
   })
 })
 
@@ -580,6 +621,7 @@ describe('cli', () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at)
     for (const c of order) expect(text).toContain(`factory ${c}`)
     expect(text).not.toMatch(/\btail\b/)
+    expect(text).not.toContain('--here')
     expect(Math.max(...text.split('\n').map((l) => l.length))).toBeLessThanOrEqual(80)
     t.out.length = 0
     expect(await main([], t.cli)).toBe(0)

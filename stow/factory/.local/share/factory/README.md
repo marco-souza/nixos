@@ -16,7 +16,9 @@ Every command takes `--repo <path>`.
 - `factory logs <id> [<role>] [-f]`: an agent's log (default: the latest)
 - `factory approve <id>`: accept the PR, or an escalation, and go on
 - `factory feedback <id> [<note>…]`: send new PR comments and a note; new cycle
-- `factory run <id> [--inline]`: drive the job here; retries a failed step
+- `factory run <id> [--inline]`: (re)start the job's driver in its tmux session
+  and return; retries a failed step. `--inline` drives it in this terminal
+  instead, without tmux
 - `factory discard <id> [--yes]`: close the PR, delete the branch and worktree
 - `factory dashboard [--port <n>]`: serve the dashboard on 127.0.0.1 (port 8000)
 
