@@ -103,12 +103,31 @@ describe('TmuxSpawner', () => {
   })
 
   test('respawnDriver respawns when the session exists, creates it otherwise', async () => {
-    const present = new FakeExec()
+    const present = new FakeExec([{ match: ['tmux', 'list-windows'], result: { stdout: 'driver\nplanner\n' } }])
     await new TmuxSpawner(present).respawnDriver('j', dir, 'drv')
     expect(present.calls.at(-1)).toEqual(['tmux', 'respawn-window', '-k', '-t', '=factory-j:driver', '-c', dir, 'drv'])
     const missing = new FakeExec([{ match: ['tmux', 'has-session'], result: { code: 1 } }])
     await new TmuxSpawner(missing).respawnDriver('j', dir, 'drv')
     expect(missing.calls.some((c) => c[1] === 'new-session')).toBe(true)
+  })
+
+  test('respawnDriver opens a new driver window when the human closed it', async () => {
+    const exec = new FakeExec([{ match: ['tmux', 'list-windows'], result: { stdout: 'planner\n' } }])
+    await new TmuxSpawner(exec).respawnDriver('j', dir, 'drv')
+    expect(exec.calls.at(-1)).toEqual(['tmux', 'new-window', '-d', '-t', '=factory-j:', '-n', 'driver', '-c', dir, 'drv'])
+    expect(exec.calls.some((c) => c[1] === 'respawn-window')).toBe(false)
+  })
+
+  test('a tmux failure starting the driver throws its first stderr line', async () => {
+    const error = (rules: ConstructorParameters<typeof FakeExec>[0]) => new TmuxSpawner(new FakeExec(rules)).respawnDriver('j', dir, 'drv')
+    const message = 'tmux: could not start the driver for j: boom'
+    const fail = { code: 1, stderr: '\nboom\nmore\n' }
+    await expect(error([{ match: ['tmux', 'list-windows'], result: { stdout: 'driver\n' } }, { match: ['tmux', 'respawn-window'], result: fail }])).rejects.toThrow(message)
+    await expect(error([{ match: ['tmux', 'new-window'], result: fail }])).rejects.toThrow(message)
+    await expect(error([{ match: ['tmux', 'has-session'], result: { code: 1 } }, { match: ['tmux', 'new-session'], result: fail }])).rejects.toThrow(message)
+    const created = new FakeExec([{ match: ['tmux', 'has-session'], result: { code: 1 } }, { match: ['tmux', 'new-session'], result: { code: 1 } }])
+    await expect(new TmuxSpawner(created).ensureSession('j', dir, 'drv')).rejects.toThrow('tmux: could not start the driver for j: exit 1')
+    expect(created.calls.some((c) => c[1] === 'set-option')).toBe(false)
   })
 
   test.skipIf(!Bun.which('tmux'))('real tmux runs a window to completion', async () => {

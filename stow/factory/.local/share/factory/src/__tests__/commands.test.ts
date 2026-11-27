@@ -17,7 +17,7 @@ import { realExec, type ExecResult } from '../exec'
 import { Git, GitHub } from '../git'
 import { createJob, loadJob, saveJob, type Job } from '../job'
 import { jobPaths } from '../paths'
-import type { Spawner } from '../spawn'
+import { TmuxSpawner, type Spawner } from '../spawn'
 import { FakeExec, tempRepo } from './helpers'
 
 const ROLES = join(import.meta.dir, 'fixtures', 'roles')
@@ -222,6 +222,18 @@ describe('approve and retry', () => {
     await t.job({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'design', reason: 'boom' })
     expect((await retry(t.repo, ID, t.deps)).stage).toBe('design')
     expect(t.spawner.calls).toEqual([['respawnDriver', ID, t.paths.worktree, driverCommand(ID)]])
+  })
+
+  test('a driver tmux could not start is an error, not a success', async () => {
+    const t = await setup()
+    await t.job({ stage: 'human-review', waitingFor: 'human-review', pr: PR })
+    t.deps.spawner = new TmuxSpawner(new FakeExec([
+      { match: ['tmux', 'has-session'], result: { code: 1 } },
+      { match: ['tmux', 'new-session'], result: { code: 1, stderr: 'no server running on /tmp/tmux-501/default\n' } },
+    ]))
+    expect(await t.run('approve', ID)).toBe(1)
+    expect(t.err).toEqual([`factory: tmux: could not start the driver for ${ID}: no server running on /tmp/tmux-501/default`])
+    expect(t.out).toEqual([])
   })
 
   test('approve where there is nothing to approve fails without a stack trace', async () => {

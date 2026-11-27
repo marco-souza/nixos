@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Harness } from './config'
-import type { Exec } from './exec'
+import type { Exec, ExecResult } from './exec'
 import { CLI_PATH } from './paths'
 import { shq } from './shell'
 
@@ -25,13 +25,19 @@ export interface Spawner {
   /** Every window but `driver`. */
   killAgents(jobId: string): Promise<void>
   killSession(jobId: string): Promise<void>
-  /** Creates the session when missing. */
+  /** Creates the session, or its `driver` window, when missing. Throws when tmux can't start the driver. */
   respawnDriver(jobId: string, cwd: string, driverCmd: string): Promise<void>
 }
 
 const session = (jobId: string) => `factory-${jobId}`
 // `=` makes tmux match the name exactly; bare names fall back to prefix matching.
 const exact = (jobId: string) => `=${session(jobId)}`
+
+/** A tmux call that should have started the driver failed: say so, or the command would report a false success. */
+function driverError(jobId: string, r: ExecResult): Error {
+  const first = r.stderr.split('\n').find((l) => l.trim())?.trim() ?? `exit ${r.code}`
+  return new Error(`tmux: could not start the driver for ${jobId}: ${first}`)
+}
 
 // A bad cwd must still leave an exit code, or the waiter runs to its timeout.
 const cdFail = (req: SpawnRequest) => `{ echo 97 > ${shq(req.doneFile)}; exit 97; }`
@@ -67,7 +73,8 @@ export class TmuxSpawner implements Spawner {
   }
 
   private async createSession(jobId: string, cwd: string, driverCmd: string): Promise<void> {
-    await this.tmux('new-session', '-d', '-s', session(jobId), '-n', 'driver', '-c', cwd, driverCmd)
+    const r = await this.tmux('new-session', '-d', '-s', session(jobId), '-n', 'driver', '-c', cwd, driverCmd)
+    if (r.code !== 0) throw driverError(jobId, r)
     const s = exact(jobId)
     await this.tmux('set-option', '-t', s, 'status-left', '#[bold]factory #S ')
     // So an agent that fails instantly keeps its window even before the per-window option lands.
@@ -117,7 +124,11 @@ export class TmuxSpawner implements Spawner {
 
   async respawnDriver(jobId: string, cwd: string, driverCmd: string): Promise<void> {
     if (!(await this.hasSession(jobId))) return this.createSession(jobId, cwd, driverCmd)
-    await this.tmux('respawn-window', '-k', '-t', `${exact(jobId)}:driver`, '-c', cwd, driverCmd)
+    // The human may have closed the driver window.
+    const r = (await this.windows(jobId, '#{window_name}')).includes('driver')
+      ? await this.tmux('respawn-window', '-k', '-t', `${exact(jobId)}:driver`, '-c', cwd, driverCmd)
+      : await this.tmux('new-window', '-d', '-t', `${exact(jobId)}:`, '-n', 'driver', '-c', cwd, driverCmd)
+    if (r.code !== 0) throw driverError(jobId, r)
   }
 }
 
