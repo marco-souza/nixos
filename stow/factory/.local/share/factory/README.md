@@ -19,7 +19,8 @@ Every command takes `--repo <path>`.
 - `factory run <id> [--inline]`: (re)start the job's driver in its tmux session
   and return; retries a failed step. `--inline` drives it in this terminal
   instead, without tmux (not during the grill, which needs a terminal)
-- `factory discard <id> [--yes]`: close the PR, delete the branch and worktree
+- `factory discard <id> [--yes]`: close the PR, delete the branch and worktree;
+  asks first, and refuses without `--yes` when there is no terminal to ask on
 - `factory dashboard [--port <n>]`: serve the dashboard on 127.0.0.1 (port 8000)
 
 ## Configuring a repo

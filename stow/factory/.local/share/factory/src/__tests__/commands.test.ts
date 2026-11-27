@@ -382,6 +382,18 @@ describe('discard', () => {
     expect(t.spawner.calls).toEqual([])
   })
 
+  test('without a terminal, discard refuses unless --yes', async () => {
+    const t = await setup({ terminal: { tty: false } })
+    await t.job({ stage: 'build', waitingFor: null })
+    expect(await t.run('discard', ID)).toBe(1)
+    expect(t.err).toEqual([`factory: refusing to discard ${ID} without --yes (no terminal to confirm)`])
+    expect(t.questions).toEqual([])
+    expect(t.load().stage).toBe('build')
+    expect(t.spawner.calls).toEqual([])
+    expect(await t.run('discard', ID, '-y')).toBe(0)
+    expect(t.load().stage).toBe('discarded')
+  })
+
   test('--yes skips the question', async () => {
     const t = await setup({ terminal: { tty: true } })
     await t.job({ stage: 'build', waitingFor: null })

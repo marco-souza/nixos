@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { relative } from 'node:path'
 import type { Deps } from '../deps'
 import type { Job } from '../job'
-import { applyCommand } from '../machine'
+import { applyCommand, CommandError } from '../machine'
 import { jobPaths } from '../paths'
 import { prNumber } from '../ui'
 import { failed, ok, requireJob, transition, type Args, type Cli } from './shared'
@@ -37,7 +37,9 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
 export async function discardCommand(args: Args, cli: Cli, repo: string): Promise<number | void> {
   const id = args.pos[0]!
   const job = requireJob(repo, id)
-  if (cli.terminal.tty && args.flags.yes !== true && args.flags.y !== true) {
+  if (args.flags.yes !== true && args.flags.y !== true) {
+    // Agents run commands without a terminal: no one there could have said yes.
+    if (!cli.terminal.tty) throw new CommandError(`refusing to discard ${id} without --yes (no terminal to confirm)`)
     const what = job.pr ? `closes PR ${prNumber(job.pr)} and deletes` : 'deletes'
     if (!cli.confirm(`Discard ${id}? This ${what} ${job.branch} and its worktree. [y/N]`)) {
       cli.out(`Kept ${id}.`)
