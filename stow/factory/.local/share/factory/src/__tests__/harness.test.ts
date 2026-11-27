@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig, type FactoryConfig } from '../config'
-import { buildCommand, HarnessError, PLAYWRIGHT_TOOLS, renderTaskPrompt, resolveHarness } from '../harness'
+import { buildCommand, HarnessError, PLAYWRIGHT_MCP_CONFIG, PLAYWRIGHT_TOOLS, renderTaskPrompt, resolveHarness } from '../harness'
 import { createJob } from '../job'
-import { jobPaths } from '../paths'
+import { jobPaths, PACKAGE_DIR } from '../paths'
 import type { Role } from '../roles'
 import { shq } from '../shell'
 
@@ -60,17 +60,22 @@ describe('buildCommand', () => {
   const task = `"$(cat '/j/run/task.md')"`
   test('claude headless', () => {
     expect(buildCommand(role(), claude, files)).toBe(
-      `claude -p ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent' --output-format stream-json --verbose`,
+      `claude -p ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent' --output-format stream-json --verbose`,
     )
   })
   test('claude interactive', () => {
     expect(buildCommand(role({ interactive: true }), claude, files)).toBe(
-      `claude ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent'`,
+      `claude ${task} --append-system-prompt-file '/j/run/sys.md' --model 'opus' --permission-mode auto --strict-mcp-config --allowedTools 'Read,Grep,Glob,Bash,Write' --disallowedTools 'Edit,Agent'`,
     )
   })
-  test('claude browser adds playwright tools', () => {
+  test('claude browser adds the shipped playwright server and its tools', () => {
     const cmd = buildCommand(role({ browser: true }), claude, files)
+    expect(cmd).toContain(`--strict-mcp-config --mcp-config ${shq(PLAYWRIGHT_MCP_CONFIG)} --allowedTools`)
     expect(cmd).toContain(`--allowedTools 'Read,Grep,Glob,Bash,Write,${PLAYWRIGHT_TOOLS.join(',')}'`)
+  })
+  test('only browser roles get an mcp config', () => {
+    expect(buildCommand(role(), claude, files)).not.toContain('--mcp-config')
+    expect(buildCommand(role({ interactive: true }), claude, files)).not.toContain('--mcp-config')
   })
   test('pi headless', () => {
     expect(buildCommand(role(), { harness: 'pi', model: 'm' }, files)).toBe(
@@ -93,12 +98,23 @@ describe('buildCommand', () => {
 })
 
 describe('PLAYWRIGHT_TOOLS', () => {
-  test('12 unique browser tools', () => {
+  test('12 unique browser tools of the shipped playwright server', () => {
     expect(PLAYWRIGHT_TOOLS).toHaveLength(12)
     expect(new Set(PLAYWRIGHT_TOOLS).size).toBe(12)
-    expect(PLAYWRIGHT_TOOLS.every((t) => t.startsWith('mcp__plugin_playwright_playwright__browser_'))).toBe(true)
-    expect(PLAYWRIGHT_TOOLS).toContain('mcp__plugin_playwright_playwright__browser_hover')
-    expect(PLAYWRIGHT_TOOLS).toContain('mcp__plugin_playwright_playwright__browser_emulate_media')
+    expect(PLAYWRIGHT_TOOLS.every((t) => t.startsWith('mcp__playwright__browser_'))).toBe(true)
+    expect(PLAYWRIGHT_TOOLS).toContain('mcp__playwright__browser_hover')
+    expect(PLAYWRIGHT_TOOLS).toContain('mcp__playwright__browser_emulate_media')
+  })
+})
+
+describe('PLAYWRIGHT_MCP_CONFIG', () => {
+  test('one server, playwright, pinned, isolated and headless', async () => {
+    expect(PLAYWRIGHT_MCP_CONFIG).toBe(join(PACKAGE_DIR, 'mcp', 'playwright.json'))
+    expect(await Bun.file(PLAYWRIGHT_MCP_CONFIG).json()).toEqual({
+      mcpServers: {
+        playwright: { command: 'npx', args: ['-y', '@playwright/mcp@0.0.86', '--isolated', '--headless'] },
+      },
+    })
   })
 })
 

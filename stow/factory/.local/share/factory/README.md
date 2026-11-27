@@ -62,6 +62,10 @@ the v1 skill show as legacy and are never driven.
 `reviewer-<lens>`, `validator-<kind>`, judges, `summarizer`, …). `_common.md` and
 `_builder.md` are shared preambles. Role files hold nothing repo-specific.
 
+Claude roles see only the MCP servers the factory gives them, never yours.
+Browser roles (`browser: true`) run on claude with the Playwright server in
+`mcp/playwright.json`, started with `npx`, so they need node on the PATH.
+
 ## Tests
 
 ```sh

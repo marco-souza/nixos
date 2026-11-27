@@ -1,6 +1,7 @@
+import { join } from 'node:path'
 import type { FactoryConfig, Harness, Tier } from './config'
 import type { Job } from './job'
-import type { JobPaths } from './paths'
+import { PACKAGE_DIR, type JobPaths } from './paths'
 import type { NeutralTool, Role } from './roles'
 import { shq } from './shell'
 
@@ -11,7 +12,13 @@ export class HarnessError extends Error {
   }
 }
 
-const PW = 'mcp__plugin_playwright_playwright__browser_'
+/**
+ * The Playwright MCP server browser roles get, never the user's own. `--isolated`: browser roles that run side by
+ * side in one worktree would otherwise share, and fight over, one persistent browser profile.
+ */
+export const PLAYWRIGHT_MCP_CONFIG: string = join(PACKAGE_DIR, 'mcp', 'playwright.json')
+
+const PW = 'mcp__playwright__browser_'
 /** builder-frontend's tools, then the two extra ones reviewer-ui uses. */
 export const PLAYWRIGHT_TOOLS: string[] = [
   'navigate', 'snapshot', 'take_screenshot', 'resize', 'click', 'type', 'press_key', 'wait_for',
@@ -93,6 +100,9 @@ export function buildCommand(
       '--append-system-prompt-file', shq(files.system),
       ...(h.model ? ['--model', shq(h.model)] : []),
       '--permission-mode', 'auto',
+      // Only the servers named here: the user's MCP connectors stay out of reach of unattended agents.
+      '--strict-mcp-config',
+      ...(role.browser ? ['--mcp-config', shq(PLAYWRIGHT_MCP_CONFIG)] : []),
       '--allowedTools', shq(allowed.join(',')),
       '--disallowedTools', shq(denied.join(',')),
       ...(headless ? ['--output-format', 'stream-json', '--verbose'] : []),
