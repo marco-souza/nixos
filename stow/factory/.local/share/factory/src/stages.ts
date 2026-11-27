@@ -88,10 +88,9 @@ function setTrip(c: Ctx, patch: (t: TripRecord) => Partial<TripRecord>): void {
   })
 }
 
-/** Browser roles get the QA env when there is one and `qa` allows it, else their own local port. */
-function browserTarget(c: Ctx, role: string, i: number, qa: boolean): string | null {
-  if (!loadRole(c.deps.rolesDir, role).browser) return null
-  return (qa && c.job.qaUrl) || localUrl(c, i)
+/** Browser builders and reviewers get their own local dev server: QA lags behind the branch until qa-wait. */
+function browserTarget(c: Ctx, role: string, i: number): string | null {
+  return loadRole(c.deps.rolesDir, role).browser ? localUrl(c, i) : null
 }
 
 const push = (c: Ctx, force = false) => c.deps.git.push(c.job.worktree, c.job.branch, { force })
@@ -245,7 +244,7 @@ const build: Step = async (c) => {
       const r = checkOutput('build', text, c.cfg)
       return !r.ok || hasSection(text, id) ? r : { ok: false, problem: `no "## ${id}" section` }
     }
-    const [r] = await c.spawn([{ role, kind: 'build', output, assignment: `Task ${id}`, target: browserTarget(c, role, 0, false), check, resume: false }])
+    const [r] = await c.spawn([{ role, kind: 'build', output, assignment: `Task ${id}`, target: browserTarget(c, role, 0), check, resume: false }])
     if (!r!.ok) return failed('build', r!.problem)
     if (r!.verdict === 'BLOCKED') return failed('build', `${role}: ${id} ${blockedLine(r!.text)}`)
     // Recorded before the push, so a failed push retries the push, not the builder.
@@ -266,7 +265,7 @@ const review: Step = async (c) => {
       kind: 'review' as const,
       output: out(c, 'review', lens),
       assignment: `Review the branch through the ${lens} lens.`,
-      target: browserTarget(c, `reviewer-${lens}`, i, true),
+      target: browserTarget(c, `reviewer-${lens}`, i),
       onResult: (r: AgentResult) => {
         if (r.ok) setTrip(c, (t) => ({ reviews: { ...t.reviews, [lens]: r.verdict! } }))
       },

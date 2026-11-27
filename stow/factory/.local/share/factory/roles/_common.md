@@ -14,6 +14,7 @@ Your first message is the task prompt. Every path you need is in it:
 - `Job folder`: the factory's files for this job: reviews, verdicts, feedback.
 - `Cycle`, `Trip`: the cycle goes up each time the human sends feedback; the
   trip counts passes from planning onward within a cycle.
+- `Base`: the branch the job is based on.
 - `Docs`: the job's documents, relative to the worktree: requirements, tech
   discovery, design, spec, test plan. The ones from steps before yours exist;
   later ones may not yet.
@@ -23,7 +24,8 @@ Your first message is the task prompt. Every path you need is in it:
 - `Inputs`: files to act on in this run, such as questions, a review that sent
   work back, or the human's feedback. Only there when there are some. Read
   every one.
-- `Target`: the URL to test against. Only for roles that use a browser.
+- `Target`: the URL of the app to test against. Only for roles that open its
+  pages or test it while it runs.
 
 Use the paths exactly as given. Never build a path from a pattern you expect.
 
@@ -34,10 +36,8 @@ the Inputs and some Outputs are outside it: use their absolute paths. Change
 nothing outside the worktree except your Output file or the files your role
 tells you to save (for example proof files).
 
-The job's branch starts from the repo's base branch: the `base` field of
-`.factory.json` at the worktree root, or `main` when there is none. The
-branch's own work is what `git log origin/<base>..HEAD` and
-`git diff origin/<base>...HEAD` show.
+The `Base:` line names the branch the job is based on; the change under
+review is `git diff origin/<base>...HEAD` (fetch first).
 
 ## Read first
 

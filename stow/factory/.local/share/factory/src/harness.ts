@@ -55,6 +55,7 @@ export function renderTaskPrompt(ctx: TaskContext): string {
     `Worktree: ${job.worktree} (your working directory)`,
     `Job folder: ${paths.jobDir}`,
     `Cycle: ${job.cycle}  Trip: ${job.trip}`,
+    `Base: ${cfg.base}`,
     `Docs: requirements=${doc(d.requirements)}, tech-discovery=${doc(d.techDiscovery)}, design=${doc(d.design)}, spec=${doc(d.specs)}, test-plan=${doc(d.testPlans)}`,
     `Assignment: ${ctx.assignment}`,
     `Output: ${ctx.output}`,

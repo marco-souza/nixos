@@ -648,6 +648,18 @@ describe('runJob', () => {
     expect(t.task('validator-e2e')).toContain('Target: https://qa.example/late')
   })
 
+  test('browser builders and reviewers use their local port even with a QA env; validators use the QA env', async () => {
+    const t = await setup({ stage: 'build', patch: { qaUrl: 'https://qa.example/x' } })
+    t.write(t.doc('specs'), SPEC.replace('Lenses: product, code, security', 'Lenses: product, ux, ui'))
+    expect(await t.run()).toBe('waiting')
+    expect(t.load().stage).toBe('human-review')
+    expect(t.task('builder-frontend')).toContain('Target: http://localhost:5110')
+    expect(t.task('reviewer-ux')).toContain('Target: http://localhost:5111')
+    expect(t.task('reviewer-ui')).toContain('Target: http://localhost:5112')
+    expect(t.task('validator-e2e')).toContain('Target: https://qa.example/x')
+    expect(t.task('validator-user')).toContain('Target: https://qa.example/x')
+  })
+
   test('a failing qaUrl hook in qa-wait is noted and validation goes on locally', async () => {
     const t = await setup({ stage: 'qa-wait', config: { hooks: { qaUrl: 'echo down >&2; exit 2' } } })
     t.write(t.doc('test-plans'), canned('test-planner', '', ''))

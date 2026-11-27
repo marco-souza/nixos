@@ -106,9 +106,9 @@ describe('renderTaskPrompt', () => {
   const now = new Date('2026-11-26T00:00:00Z')
   const job = createJob({ id: '261126-thing', feature: 'Add thing', repo: '/r', slot: 1, now })
   const paths = jobPaths('/r', job.id)
-  const mk = () => ({ job: { ...job, trip: 2 }, paths, cfg, assignment: 'Build T1', output: '/r/.factory/jobs/261126-thing/trip-2/build.md', inputs: ['/a.md', '/b.md'], target: 'local dev server on port 3101' })
+  const mk = () => ({ job: { ...job, trip: 2 }, paths, cfg: { ...cfg, base: 'develop' }, assignment: 'Build T1', output: '/r/.factory/jobs/261126-thing/trip-2/build.md', inputs: ['/a.md', '/b.md'], target: 'http://localhost:5110' })
 
-  test('build task with port target', () => {
+  test('build task with a local target and the base branch', () => {
     expect(renderTaskPrompt(mk())).toBe(
       [
         'Job: 261126-thing',
@@ -116,11 +116,12 @@ describe('renderTaskPrompt', () => {
         'Worktree: /r/.factory/261126-thing (your working directory)',
         'Job folder: /r/.factory/jobs/261126-thing',
         'Cycle: 1  Trip: 2',
+        'Base: develop',
         'Docs: requirements=docs/requirements/261126-thing.md, tech-discovery=docs/tech-discovery/261126-thing.md, design=docs/design-docs/261126-thing.md, spec=docs/specs/261126-thing.md, test-plan=docs/test-plans/261126-thing.md',
         'Assignment: Build T1',
         'Output: /r/.factory/jobs/261126-thing/trip-2/build.md',
         'Inputs: /a.md, /b.md',
-        'Target: local dev server on port 3101',
+        'Target: http://localhost:5110',
       ].join('\n'),
     )
   })

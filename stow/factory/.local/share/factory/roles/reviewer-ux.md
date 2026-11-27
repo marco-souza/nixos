@@ -35,15 +35,9 @@ created). Never commit.
 ## Look at it
 
 If the change shows up on a page, use it like a visitor would, in the
-browser, on pages at `Target` and nowhere else:
-
-- When Target is a local address (`http://localhost:<port>`), start the dev
-  server the way `AGENTS.md` says, in the worktree, in the background, on
-  that port.
-- Otherwise Target is the job's QA environment: open it as it is, and start
-  nothing. If it doesn't show the branch's latest change yet, say so under
-  Notes and review from the code and the screenshots in the job folder's
-  `proof` folder.
+browser, on pages at `Target` and nowhere else. If the page doesn't load,
+start the dev server the way `AGENTS.md` says, in the worktree, in the
+background, on the Target's port.
 
 Read the page's accessibility tree (roles, labels, focus order), click
 through the flow, use it with the keyboard, and check it at phone width

@@ -37,15 +37,9 @@ created). Never commit.
 ## Look at it
 
 If the change shows up on a page, look at it in the browser, on pages at
-`Target` and nowhere else:
-
-- When Target is a local address (`http://localhost:<port>`), start the dev
-  server the way `AGENTS.md` says, in the worktree, in the background, on
-  that port.
-- Otherwise Target is the job's QA environment: open it as it is, and start
-  nothing. If it doesn't show the branch's latest change yet, say so under
-  Notes and review from the code and the screenshots in the job folder's
-  `proof` folder.
+`Target` and nowhere else. If the page doesn't load, start the dev server the
+way `AGENTS.md` says, in the worktree, in the background, on the Target's
+port.
 
 Take screenshots at desktop (1440×900) and phone (390×844) widths. If the app
 has a dark mode, check it too by emulating the dark colour scheme. Don't sign
