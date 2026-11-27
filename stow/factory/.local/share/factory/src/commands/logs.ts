@@ -27,7 +27,7 @@ function pickLog(logsDir: string, role: string | undefined): string | null {
 }
 
 /** From the first JSON line: claude events have a `session_id` and a claude `type`; anything else is pi. */
-function detectFormat(text: string): Harness {
+export function detectFormat(text: string): Harness {
   for (const line of text.split('\n')) {
     let ev: unknown
     try {

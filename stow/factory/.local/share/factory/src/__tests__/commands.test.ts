@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { main } from '../cli'
 import { approve } from '../commands/approve'
 import { retry } from '../commands/run'
+import { serveDashboard } from '../commands/dashboard'
 import { discard } from '../commands/discard'
 import { feedback } from '../commands/feedback'
 import { newJob } from '../commands/new'
@@ -563,10 +564,19 @@ describe('cli', () => {
     }
   })
 
-  test('the dashboard says when it is not built yet', async () => {
+  test('the dashboard serves on the given port and rejects a bad one', async () => {
     const t = await setup()
-    expect(await t.run('dashboard')).toBe(1)
-    expect(t.err).toEqual(['factory: dashboard not available yet'])
+    await t.job()
+    const server = serveDashboard({ pos: [], flags: { port: '0' } }, t.cli, t.repo)
+    try {
+      expect(t.out).toEqual([`Factory dashboard: http://127.0.0.1:${server.port}`])
+      const body = (await (await fetch(`http://127.0.0.1:${server.port}/api/jobs`)).json()) as { jobs: { id: string }[] }
+      expect(body.jobs.map((j) => j.id)).toEqual([ID])
+    } finally {
+      server.stop(true)
+    }
+    expect(await t.run('dashboard', '--port', '70000')).toBe(1)
+    expect(t.err).toEqual(['factory: not a port: 70000'])
   })
 
   test('attach needs the job session', async () => {

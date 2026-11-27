@@ -35,13 +35,13 @@ export interface Terminal {
 /** An error the command already printed; the CLI only exits 1. */
 export class ReportedError extends Error {}
 
-const ID = /^[A-Za-z0-9][\w.-]*$/
+export const JOB_ID = /^[A-Za-z0-9][\w.-]*$/
 
 /** Job `id`, v1 or v2. Throws CommandError when there is none. */
 export function findJob(repo: string, id: string): Job | LegacyJob {
   const file = jobPaths(repo, id).jobFile
   // The id becomes a path: anything but a plain name is no job.
-  if (!ID.test(id) || !existsSync(file)) throw new CommandError(`no job ${id} (see: factory status)`)
+  if (!JOB_ID.test(id) || !existsSync(file)) throw new CommandError(`no job ${id} (see: factory status)`)
   return loadJob(file)
 }
 
