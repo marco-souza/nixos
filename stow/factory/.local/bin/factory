@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec bun "$HOME/.local/share/factory/src/cli.ts" "$@"

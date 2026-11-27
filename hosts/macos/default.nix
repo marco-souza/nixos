@@ -106,7 +106,7 @@
     fi
 
     if [ -d ~/w/marco-souza/nixos/ ]; then
-      cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux ghostty pi mise
+      cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux ghostty pi mise factory
     fi
     USERSETUP
   '';

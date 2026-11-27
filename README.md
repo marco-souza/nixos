@@ -18,8 +18,9 @@ nixos/
 │   ├── homelab/                     # default.nix + hardware-configuration.nix
 │   └── macos/default.nix            # nix-darwin config (macOS)
 ├── stow/                            # Dotfiles managed by GNU Stow
-│   ├── claude/.claude/              # Claude Code config, agents, skills, plugins
+│   ├── claude/.claude/              # Claude Code config, skills, plugins
 │   ├── cosmic/.config/cosmic/       # COSMIC desktop settings
+│   ├── factory/.local/              # Factory CLI (`factory`), roles, dashboard
 │   ├── ghostty/.config/ghostty/     # Terminal emulator config
 │   ├── mise/mise.toml               # Tool version manager
 │   ├── pi/.pi/                      # Pi coding agent config + skills
@@ -45,8 +46,9 @@ nixos/
 
 | Package  | Description                           |
 | -------- | ------------------------------------- |
-| `claude`  | Claude Code settings, agents, skills + plugin marketplace |
+| `claude`  | Claude Code settings, skills + plugin marketplace |
 | `cosmic`  | COSMIC compositor settings (focus-follows-cursor off, so fullscreen holds) |
+| `factory` | Factory CLI: feature to reviewed PR with agent roles + dashboard (needs `~/.local/bin` on PATH) |
 | `ghostty` | Ghostty terminal config (theme, opacity) |
 | `mise`    | Tool versions: pi, claude-code, bun, deno, odin |
 | `pi`      | Pi coding agent + skills + task pipeline |
