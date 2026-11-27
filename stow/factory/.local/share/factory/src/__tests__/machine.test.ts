@@ -9,7 +9,7 @@ const L: Limits = { maxTrips: 3, maxDiscoveryLoops: 3 }
 
 /** A job in `stage`; stages other than requirements start with no wait. */
 function job(o: Partial<Job> = {}): Job {
-  const base = createJob({ id: ID, feature: 'f', repo: '/repo', slot: 1, now: earlier })
+  const base = createJob({ id: ID, branch: `factory/${ID}`, feature: 'f', repo: '/repo', slot: 1, now: earlier })
   const waits = o.stage && o.stage !== 'requirements' ? { waitingFor: null, waitingSince: null } : {}
   return { ...base, ...waits, ...o }
 }

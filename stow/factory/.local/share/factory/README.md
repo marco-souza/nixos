@@ -55,10 +55,13 @@ which roles read first. It should say:
 ## State
 
 In the target repo, under `.factory/` (git-excluded): `.factory/<job>/` is the
-job's worktree on branch `factory/<job>`, and `.factory/jobs/<job>/` holds the
-job state, activity log, agent logs, reviews and `pr.md`. Each job runs in the
-tmux session `factory-<job>`. Job ids look like `261126-rate-limit`. v1 jobs are
-ignored; delete their folders by hand.
+job's worktree, and `.factory/jobs/<job>/` holds the job state, activity log,
+agent logs, reviews and `pr.md`. Each job runs in the tmux session
+`factory-<job>`. `factory new` asks the default harness's low-tier model to name
+the branch: the repo's convention if its instructions give one, otherwise
+`<type>/<TICKET>/<brief-name>` (`fix/WEB-123/raise-cache-timeout`, or
+`fix/raise-cache-timeout` when the request names no ticket). The job id is the
+branch's last part. v1 jobs are ignored; delete their folders by hand.
 
 ## Roles
 

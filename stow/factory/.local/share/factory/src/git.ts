@@ -17,18 +17,18 @@ async function ok(exec: Exec, cmd: string[], cwd: string): Promise<ExecResult> {
   return r
 }
 
-/** Destructive operations only ever touch the factory's own branches: jobs' and their proof. */
-function factoryOnly(op: string, branch: string): void {
-  if (!branch.startsWith('factory/') && !branch.startsWith('factory-proof/')) {
-    throw new Error(`refusing to ${op} "${branch}": not a factory/ or factory-proof/ branch`)
-  }
-}
-
 export class Git {
   constructor(private exec: Exec, private repo: string) {}
 
   private git(args: string[], cwd = this.repo) {
     return ok(this.exec, ['git', ...args], cwd)
+  }
+
+  /** Destructive operations only ever touch the factory's own branches: the ones `createWorktree` marked, and proof. */
+  private async factoryOnly(op: string, branch: string): Promise<void> {
+    if (branch.startsWith('factory-proof/')) return
+    const r = await this.exec.run(['git', 'config', '--get', `branch.${branch}.factory`], { cwd: this.repo })
+    if (r.code !== 0) throw new Error(`refusing to ${op} "${branch}": the factory did not create it`)
   }
 
   async ensureExcluded(): Promise<void> {
@@ -44,6 +44,7 @@ export class Git {
   async createWorktree(branch: string, path: string, base: string): Promise<void> {
     await this.git(['fetch', 'origin', base])
     await this.git(['worktree', 'add', '-b', branch, path, `origin/${base}`])
+    await this.git(['config', `branch.${branch}.factory`, 'true'])
   }
 
   async commitPaths(cwd: string, paths: string[], message: string): Promise<boolean> {
@@ -62,7 +63,7 @@ export class Git {
   }
 
   async push(cwd: string, branch: string, o: { force?: boolean } = {}): Promise<void> {
-    factoryOnly('push', branch)
+    await this.factoryOnly('push', branch)
     await this.git(['push', ...(o.force ? ['--force-with-lease'] : []), '-u', 'origin', branch], cwd)
   }
 
@@ -79,7 +80,7 @@ export class Git {
   }
 
   async deleteBranch(branch: string): Promise<void> {
-    factoryOnly('delete', branch)
+    await this.factoryOnly('delete', branch)
     const local = await this.exec.run(['git', 'branch', '-D', branch], { cwd: this.repo })
     if (local.code !== 0 && !/not found/i.test(local.stderr)) {
       throw new GitError(['git', 'branch', '-D', branch], local)
@@ -90,12 +91,12 @@ export class Git {
     }
   }
 
-  async remoteFactoryBranches(): Promise<string[]> {
-    const r = await this.git(['ls-remote', '--heads', 'origin', 'refs/heads/factory/*'])
-    return r.stdout
-      .split('\n')
-      .map((l) => l.split('\t')[1]?.replace(/^refs\/heads\//, ''))
-      .filter((b): b is string => !!b)
+  /** Whether `branch` exists here or on origin; an unreachable origin counts as no. */
+  async branchExists(branch: string): Promise<boolean> {
+    const local = await this.exec.run(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: this.repo })
+    if (local.code === 0) return true
+    const remote = await this.exec.run(['git', 'ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${branch}`], { cwd: this.repo })
+    return remote.code === 0
   }
 }
 
@@ -183,7 +184,7 @@ export class GitHub {
   }
 
   async close(pr: string): Promise<void> {
-    await this.gh(['pr', 'close', pr, '--delete-branch'])
+    await this.gh(['pr', 'close', pr])
   }
 
   async commentsSince(pr: string, sinceIso: string | null): Promise<PrComment[]> {

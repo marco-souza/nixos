@@ -25,7 +25,7 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
   }
   // The session first: it holds the driver, which would otherwise save over `discarded`.
   await attempt(`stop tmux session factory-${id}`, () => deps.spawner.killSession(id))
-  // The worktree before the PR: `gh pr close --delete-branch` can't delete a branch a worktree has checked out.
+  // The worktree before the branch: git can't delete a branch a worktree has checked out.
   if (existsSync(job.worktree)) await attempt('remove worktree', () => deps.git.removeWorktree(job.worktree))
   if (job.pr) await attempt(`close PR ${prNumber(job.pr)}`, () => deps.gh.close(job.pr!))
   await attempt(`delete branch ${job.branch}`, () => deps.git.deleteBranch(job.branch))

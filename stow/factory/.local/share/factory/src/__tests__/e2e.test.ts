@@ -36,6 +36,8 @@ class E2eExec implements Exec {
   async run(cmd: string[], opts: { cwd?: string; env?: Record<string, string>; input?: string } = {}): Promise<ExecResult> {
     if (cmd[0] === 'tmux') return cmd[1] === '-V' && cmd.length === 2 ? ok('tmux 3.5\n') : this.refuse(cmd)
     if (cmd[0] === 'gh') return this.fakeGh(cmd)
+    // `factory new` naming the branch.
+    if (cmd[0] === 'claude') return ok('feature/RATE-1/add-rate-limiting\n')
     // A `bash -c` is a hook from .factory.json; any other bash runs an agent's run script.
     if (cmd[0] === 'bash' && cmd[1] !== '-c' && !readFileSync(cmd[1]!, 'utf8').includes(shq(FAKE_AGENT))) {
       throw new Error(`e2e: ${basename(cmd[1]!)} does not run the fake agent; a real agent must not run`)
@@ -250,7 +252,8 @@ describe('factory end to end (real git, real roles, inline fake agents)', () => 
 
     expect(t.exec.calls('pr', 'ready')).toEqual([['pr', 'ready', PR], ['pr', 'ready', PR, '--undo'], ['pr', 'ready', PR]])
     expect(t.trips()).toEqual(['trip-1', 'trip-2'])
-    expect(await t.origin('log', '--format=%s', `factory/${t.id}`)).toContain(`feat: t1 for ${t.id} (cycle 2 trip 1)`)
+    expect(t.id).toBe('add-rate-limiting')
+    expect(await t.origin('log', '--format=%s', 'feature/RATE-1/add-rate-limiting')).toContain(`feat: t1 for ${t.id} (cycle 2 trip 1)`)
   }, 20_000)
 
   test('without commandFor a run fails fast and no real agent starts', async () => {

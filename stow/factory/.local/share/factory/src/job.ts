@@ -56,13 +56,13 @@ export interface Job {
   updatedAt: string
 }
 
-export function createJob(args: { id: string; feature: string; repo: string; slot: number; now: Date }): Job {
+export function createJob(args: { id: string; branch: string; feature: string; repo: string; slot: number; now: Date }): Job {
   const at = args.now.toISOString()
   return {
     version: 2,
     id: args.id,
     feature: args.feature,
-    branch: `factory/${args.id}`,
+    branch: args.branch,
     worktree: jobPaths(args.repo, args.id).worktree,
     slot: args.slot,
     stage: 'requirements',

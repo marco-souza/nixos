@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { loadConfig } from '../config'
 import type { Deps } from '../deps'
 import { driverCommand } from '../driver'
-import { newJobId, takenIds } from '../ids'
+import { jobIdFor, nameBranch, takenIds } from '../ids'
 import { appendActivity, createJob, nextSlot, saveJob, type Job } from '../job'
 import { CommandError } from '../machine'
 import { jobPaths } from '../paths'
@@ -29,22 +29,23 @@ export async function newJob(
   if (!(await hasTmux(deps.exec))) throw new Error('tmux is not installed')
   await deps.git.ensureExcluded()
 
-  const id = await step(deps, 'job', () => claimId(repo, what, cfg.docs.requirements, deps))
-  deps.log(ok(`job ${id}`))
+  const named = await nameBranch(what, cfg, deps.exec, repo)
+  const { id, branch } = await step(deps, 'job', () => claim(repo, named, cfg.docs.requirements, deps))
+  deps.log(ok(`job ${id} on ${branch}`))
   const paths = jobPaths(repo, id)
   let worktree = false
   try {
-    await step(deps, 'worktree', () => deps.git.createWorktree(`factory/${id}`, paths.worktree, cfg.base))
+    await step(deps, 'worktree', () => deps.git.createWorktree(branch, paths.worktree, cfg.base))
     worktree = true
     deps.log(ok(`worktree ${paths.worktree}`))
     for (const cmd of cfg.setup) await setup(cmd, paths.worktree, deps)
     if (cfg.setup.length) deps.log(ok('setup'))
   } catch (e) {
-    await rollback(repo, id, worktree, deps)
+    await rollback(repo, id, worktree ? branch : null, deps)
     throw e
   }
 
-  const job = createJob({ id, feature: what, repo, slot: nextSlot(repo), now: deps.now() })
+  const job = createJob({ id, branch, feature: what, repo, slot: nextSlot(repo), now: deps.now() })
   saveJob(paths.jobFile, job, deps.now())
   appendActivity(paths.activityLog, 'created', deps.now())
   await step(deps, 'tmux session', () => deps.spawner.ensureSession(id, paths.worktree, driverCommand(id)))
@@ -67,18 +68,23 @@ async function step<T>(deps: Deps, name: string, fn: () => Promise<T>): Promise<
   }
 }
 
-/** Takes the first free id by creating its job folder; mkdir without -p so a folder made meanwhile is a clash. */
-async function claimId(repo: string, feature: string, requirementsDir: string, deps: Deps): Promise<string> {
-  const taken = await takenIds(repo, deps.exec, requirementsDir)
+/**
+ * Takes `named`, or `named-2`, `-3`… when its id or the branch is taken, by creating the job folder; mkdir without -p
+ * so a folder made meanwhile is a clash. Never an existing branch: `discard` deletes the job's branch.
+ */
+async function claim(repo: string, named: string, requirementsDir: string, deps: Deps): Promise<{ id: string; branch: string }> {
+  const taken = takenIds(repo, requirementsDir)
   mkdirSync(jobPaths(repo, '').jobsDir, { recursive: true })
-  for (;;) {
-    const id = newJobId(deps.now(), feature, (x) => taken.has(x))
+  for (let n = 1; ; n++) {
+    const suffix = n > 1 ? `-${n}` : ''
+    const id = jobIdFor(named) + suffix
+    const branch = named + suffix
+    if (taken.has(id) || (await deps.git.branchExists(branch))) continue
     try {
       mkdirSync(jobPaths(repo, id).jobDir)
-      return id
+      return { id, branch }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
-      taken.add(id)
     }
   }
 }
@@ -96,14 +102,14 @@ async function setup(cmd: string, cwd: string, deps: Deps): Promise<void> {
 }
 
 /** Removes what this `factory new` created, so the id is free again. Best effort. */
-async function rollback(repo: string, id: string, worktree: boolean, deps: Deps): Promise<void> {
+async function rollback(repo: string, id: string, branch: string | null, deps: Deps): Promise<void> {
   const paths = jobPaths(repo, id)
-  if (worktree) {
+  if (branch) {
     await deps.git.removeWorktree(paths.worktree).catch(() => {})
-    await deps.git.deleteBranch(`factory/${id}`).catch(() => {})
+    await deps.git.deleteBranch(branch).catch(() => {})
   }
   rmSync(paths.jobDir, { recursive: true, force: true })
-  deps.log(paint('dim', `  removed job ${id}${worktree ? ', its worktree and branch' : ''}`))
+  deps.log(paint('dim', `  removed job ${id}${branch ? ', its worktree and branch' : ''}`))
 }
 
 export async function newCommand(args: Args, cli: Cli, repo: string): Promise<void> {

@@ -27,7 +27,7 @@ interface Spec {
   run(args: Args, cli: Cli, repo: string): Promise<number | void>
 }
 
-const EX = '261126-rate-limit'
+const EX = 'rate-limit-signup-form'
 
 // In help order.
 const COMMANDS: Record<string, Spec> = {
