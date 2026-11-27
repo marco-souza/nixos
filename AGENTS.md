@@ -14,6 +14,7 @@ add a machine. Read it first.
 | `modules/nixos/desktop.nix`  | COSMIC desktop, audio, bluetooth, GUI apps                      |
 | `hosts/<name>/`              | `default.nix` + `hardware-configuration.nix` for each machine   |
 | `pkgs/`                      | Local derivations for software that isn't in nixpkgs (e.g. `orca-ide.nix`) |
+| `stow/factory/`              | The factory CLI (Bun + TypeScript), its roles and dashboard      |
 | `stow/<package>/`            | Dotfiles. Each package mirrors `$HOME` (`stow/zsh/.zshrc` → `~/.zshrc`) |
 | `stow.sh`                    | Wrapper around `stow` (`./stow.sh restow zsh`)                  |
 | `Makefile`                   | `switch`, `build`, `diff`, `update`, `check`, `mac`, `hardware` |
@@ -25,19 +26,13 @@ Agent configs live in stow packages too:
 - `stow/pi/.pi/agent/`: pi agent settings, `agents/`, `skills/`, and
   `scripts/task-pipeline` (a Bun + TypeScript CLI).
 
-The factory skill has two copies that must stay in sync:
-`stow/claude/.claude/skills/factory/` + `stow/claude/.claude/agents/factory-*.md`
-and `stow/pi/.pi/agent/skills/factory/` + `stow/pi/.pi/agent/agents/factory-*.md`.
-The pi copy only differs in what pi does differently: how it spawns agents
-(`subagent` tool, no resume, no per-agent model), how it interviews (in the
-chat), its browser tools (pi-browser-bridge, which can't save screenshots), its
-tool names and its skill description. Change one copy, change the other the
-same way.
+The factory lives in `stow/factory/`; the Claude and pi `factory` skills only wrap its CLI.
 
 ## Setup for a fresh checkout or worktree
 
 Nothing to install. Nix fetches everything it needs on evaluation. Only if you
 touch `stow/pi/.pi/agent/scripts/task-pipeline/` run `bun install` in that folder.
+`stow/factory` needs no install to run tests (`bun install` only for editor types).
 
 The symlinks in `$HOME` (`~/.claude/skills/factory`, `~/.claude/agents`,
 `~/.pi/agent/...`) point at the **main checkout**, so edits in a worktree aren't
@@ -58,6 +53,7 @@ Run what applies to the files you changed, from the checkout or worktree root:
 | any `.nix`                    | `nix fmt -- --check <files>` (nixpkgs-fmt; drop `--check` to fix)       |
 | `stow.sh`                     | `bash -n stow.sh`                                                        |
 | `stow/zsh/*`                  | `zsh -n <file>` (zsh syntax, so `bash -n` fails on it)                  |
+| `stow/factory/`               | `bun test` in `stow/factory/.local/share/factory`                       |
 | `task-pipeline/`              | `bun test` in that folder                                                |
 | skills, agents, markdown      | No tooling. Reread the file and check its links, paths and names         |
 
@@ -71,11 +67,14 @@ Known failures on `main`, not caused by your change:
   it is replaced on that machine. Use the per-host evals above.
 - `bun test` in `task-pipeline/` has 8 failing tests (119 pass). Don't add to
   that count.
+- None for `stow/factory`: all its tests pass.
 
-There is no dev server and no web UI. The one HTML page,
-`skills/factory/dashboard.html`, is a static file that you open with
-`python3 -m http.server` from a repo's `factory/` folder. Only open it in a
-browser if your change touches it.
+There is no dev server. The one web UI is the factory dashboard,
+`stow/factory/.local/share/factory/dashboard.html`, served on 127.0.0.1 by
+`factory dashboard`. For UI checks during development run
+`bun src/__tests__/fixtures/seed-demo.ts <dir>` and then
+`bun src/__tests__/fixtures/serve-demo.ts` (fake deps) from the package folder.
+Only open it in a browser if your change touches it.
 
 ## Conventions
 

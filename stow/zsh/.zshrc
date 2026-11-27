@@ -1,3 +1,4 @@
+export PATH="$HOME/.local/bin:$PATH" # stowed CLIs such as factory
 source $HOME/.utils.sh
 source $HOME/.aliases
 

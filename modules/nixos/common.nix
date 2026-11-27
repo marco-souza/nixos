@@ -135,7 +135,7 @@
     fi
 
     # Stow files
-    cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux ghostty pi mise
+    cd ~/w/marco-souza/nixos/ && sh stow.sh stow zsh tmux ghostty pi mise factory
 
     # Wakatime
 
