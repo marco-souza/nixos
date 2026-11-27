@@ -8,8 +8,8 @@ import { prNumber } from '../ui'
 import { failed, ok, requireJob, transition, type Args, type Cli } from './shared'
 
 /**
- * Stops the session, removes the worktree, closes the PR, deletes the branch and the proof branch, and marks the job discarded.
- * Each step is best effort: a failure is printed and the rest still runs. The job folder stays.
+ * Stops the session, removes the worktree, closes the PR, deletes the branch and the proof branch, and marks the job
+ * discarded. Each step is best effort: a failure is printed and the rest still runs. The job folder stays.
  */
 export async function discard(repo: string, id: string, deps: Deps): Promise<Job> {
   const job = requireJob(repo, id)
