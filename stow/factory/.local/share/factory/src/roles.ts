@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Tier } from './config'
 
@@ -78,11 +78,4 @@ export function loadRole(rolesDir: string, name: string): Role {
     return trimBlankLines(readFileSync(f, 'utf8'))
   })
   return { ...role, body: [...parts, role.body].join('\n\n') }
-}
-
-export function listRoles(rolesDir: string): string[] {
-  return readdirSync(rolesDir)
-    .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
-    .map((f) => f.slice(0, -3))
-    .sort()
 }

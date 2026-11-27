@@ -33,11 +33,11 @@ export function resolveHarness(
   cfg: FactoryConfig,
 ): { harness: Harness; model: string | null; timeoutMin: number } {
   const o = cfg.roles[role.name] ?? {}
-  const harness = o.harness ?? cfg.defaultHarness
+  // Browser roles need the Playwright MCP server, which only claude gets.
+  const harness = role.browser ? 'claude' : o.harness ?? cfg.defaultHarness
   if (!HARNESSES.includes(harness)) throw new HarnessError(`role ${role.name}: unknown harness "${harness}" (claude, pi)`)
   const tier = o.tier ?? role.tier
   if (!TIERS.includes(tier)) throw new HarnessError(`role ${role.name}: unknown tier "${tier}" (high, medium, low)`)
-  if (role.browser && harness !== 'claude') throw new HarnessError(`role ${role.name} needs a browser; run it on claude`)
   const model = (cfg.models[harness] as Partial<Record<Tier, string>>)[tier] ?? null
   return { harness, model, timeoutMin: o.timeoutMin ?? cfg.timeoutsMin[tier] }
 }

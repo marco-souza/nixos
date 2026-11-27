@@ -70,8 +70,9 @@ branch's last part. v1 jobs are ignored; delete their folders by hand.
 `_builder.md` are shared preambles. Role files hold nothing repo-specific.
 
 Claude roles see only the MCP servers the factory gives them, never yours.
-Browser roles (`browser: true`) run on claude with the Playwright server in
-`mcp/playwright.json`, started with `npx`, so they need node on the PATH.
+Browser roles (`browser: true`) always run on claude, whatever the harness, with
+the Playwright server in `mcp/playwright.json`, started with `npx`, so they need
+node on the PATH.
 
 ## Tests
 

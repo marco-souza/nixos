@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { KNOWN_VALIDATORS, loadConfig, type FactoryConfig } from './config'
+import { loadConfig, type FactoryConfig } from './config'
 import type { Deps } from './deps'
-import { checkOutput, LENSES, SPECIALISTS, type OutputKind } from './handoff'
+import { checkOutput, type OutputKind } from './handoff'
 import { buildCommand, renderTaskPrompt, resolveHarness } from './harness'
 import { appendActivity, loadJob, saveJob, type Job } from './job'
 import { acquireLock } from './lock'
@@ -14,17 +14,6 @@ import { shq } from './shell'
 import { readExitCode, waitForFile, type SpawnRequest } from './spawn'
 import { docLinks, STAGES, type AgentResult, type AgentSpec, type Ctx } from './stages'
 import { nextHint, whatFor } from './ui'
-
-export type { Deps } from './deps'
-
-export const REQUIRED_ROLES: string[] = [
-  'requirements', 'tech-discoverer', 'designer', 'discovery-reviewer', 'planner',
-  ...SPECIALISTS.map((s) => `builder-${s}`),
-  ...LENSES.map((l) => `reviewer-${l}`),
-  'build-judge', 'test-planner',
-  ...KNOWN_VALIDATORS.map((v) => `validator-${v}`),
-  'validation-judge', 'resolver', 'summarizer',
-]
 
 const POLL_MS = 2000
 

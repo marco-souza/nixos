@@ -175,11 +175,6 @@ export function createFormatter(
   }
 }
 
-/** Stateless: one line on its own, so an error result can't name its tool. */
-export function formatEvent(line: string, format: Harness, width?: number): string | null {
-  return createFormatter(format, width)(line)
-}
-
 /** stdin -> stdout, one formatted event per line. */
 export async function runTail(format: Harness): Promise<void> {
   const decoder = new TextDecoder()
