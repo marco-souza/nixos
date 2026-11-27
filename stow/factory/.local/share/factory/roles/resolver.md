@@ -44,7 +44,12 @@ the branch's history, not its behaviour. The factory pushes after you.
    touches (tests, build, lint, type-check). If one fails because of the
    rebase (the base branch renamed or changed something the branch uses),
    fix it with the smallest change that keeps the behaviour, and commit it on
-   its own. If it fails for any other reason, write BLOCKED.
+   its own. If it fails for any other reason, check whether the same failure
+   happens on `origin/<base>`: run the command in a temporary detached
+   worktree of `origin/<base>` in the system temp folder (set up the way
+   `AGENTS.md` says), then remove that worktree. If it fails there too, it is
+   pre-existing: note it under Validation and keep `STATUS: READY`.
+   Otherwise write BLOCKED.
 5. Leave the rebased branch checked out and the tree clean:
    `git status --porcelain` prints nothing. Never push.
 
@@ -55,7 +60,8 @@ never pushes a half-done rebase.
 ## Write the notes
 
 The first line of the file is the status, exactly `STATUS: READY` when the
-branch is rebased, validated and clean, or `STATUS: BLOCKED`: nothing before
+branch is rebased, validated (pre-existing failures noted) and clean, or
+`STATUS: BLOCKED`: nothing before
 it, nothing after it on the line, no bold.
 
 ```markdown
@@ -68,7 +74,8 @@ STATUS: READY
 - Conflicts:
   - `<path>`: <how you resolved it, and why that keeps both sides' intent>
 - Follow-up commits: `<short sha> <message>`, or "None."
-- Validation: `<command>`: pass
+- Validation: `<command>`: pass | fails on `origin/<base>` too
+  (pre-existing): <the failure>
 
 ### Blocked
 <the blocker, in one sentence>

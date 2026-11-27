@@ -43,10 +43,17 @@ Sort each failed or blocked case, and each other finding a validator
 reports, into one of four, with a confidence of high, medium or low:
 
 - **environment**: the app at Target wasn't a fair test of the branch. Signs:
-  5xx from every route, including ones the branch doesn't touch; the
-  environment runs a different commit than the branch (a deploy SHA
-  mismatch); timeouts before the app loads; DNS, TLS or connection errors; a
-  service the app needs is down.
+  5xx from every route, including ones the branch doesn't touch; timeouts
+  before the app loads; DNS, TLS or connection errors; a service the app
+  needs is down; and, on a QA Target only, the environment runs a different
+  commit than the branch (a deploy SHA mismatch). When Target is a local
+  address (`http://localhost:<port>`), the dev server runs the branch's own
+  code, so a broken boot, bad config or missing migration on the branch
+  shows the same signs. There, and whenever the failure starts at something
+  the diff changed, read the dev server's output and the diff before you call
+  it the environment: the output a validator saved, or start the dev server
+  yourself the way `AGENTS.md` says, in the worktree, on the reports' Target
+  port, and stop it after. A failure the branch causes is a fix.
 - **fix**: the branch is why it fails: an expected result isn't met, a page
   or route the branch changed errors, a regression the change explains.
   Check the code when the cause is unclear, and rerun a failing command

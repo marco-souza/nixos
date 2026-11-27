@@ -43,9 +43,10 @@ created). Never commit.
 
 ## Run
 
-- When `AGENTS.md` names an e2e suite, run it against Target the way it
-  says, covering the e2e cases, and match each case to the tests that check
-  it. Drive a case no test covers in the browser, as below.
+- When `AGENTS.md` names an e2e suite, run the tests in it that check the
+  e2e cases, against Target the way it says, and match each case to its
+  tests. Run the whole suite only when `AGENTS.md` says it is safe to run
+  against the Target. Drive a case no test covers in the browser, as below.
 - Otherwise drive each case in the browser: follow its steps on pages at
   Target and check its expected result on the page.
 - A case's result is `pass` when its expected result holds, `fail` when it
