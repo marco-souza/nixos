@@ -93,15 +93,21 @@ describe('Git', () => {
     await expect(git.createWorktree('b', join(repo, 'w'), 'nope')).rejects.toThrow(/git fetch origin nope/)
   })
 
-  test('push and deleteBranch refuse anything but factory/ branches', async () => {
+  test('push and deleteBranch refuse anything but factory/ and factory-proof/ branches', async () => {
     const exec = new FakeExec()
     const git = new Git(exec, '/r')
-    for (const branch of ['main', 'master', 'develop', 'feature/factory/x', 'factory']) {
-      await expect(git.push('/w', branch)).rejects.toThrow(`refusing to push "${branch}": not a factory/ branch`)
-      await expect(git.push('/w', branch, { force: true })).rejects.toThrow('not a factory/ branch')
-      await expect(git.deleteBranch(branch)).rejects.toThrow(`refusing to delete "${branch}": not a factory/ branch`)
+    const not = 'not a factory/ or factory-proof/ branch'
+    for (const branch of ['main', 'master', 'develop', 'feature/factory/x', 'factory', 'factory-proof', 'factory-proofs/x', 'factory-x/y']) {
+      await expect(git.push('/w', branch)).rejects.toThrow(`refusing to push "${branch}": ${not}`)
+      await expect(git.push('/w', branch, { force: true })).rejects.toThrow(not)
+      await expect(git.deleteBranch(branch)).rejects.toThrow(`refusing to delete "${branch}": ${not}`)
     }
     expect(exec.calls).toEqual([])
+    await git.deleteBranch('factory-proof/j')
+    expect(exec.calls).toEqual([
+      ['git', 'branch', '-D', 'factory-proof/j'],
+      ['git', 'push', 'origin', '--delete', 'factory-proof/j'],
+    ])
   })
 
   test('forced push uses --force-with-lease, never --force', async () => {

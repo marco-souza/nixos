@@ -17,9 +17,11 @@ async function ok(exec: Exec, cmd: string[], cwd: string): Promise<ExecResult> {
   return r
 }
 
-/** Destructive operations only ever touch the factory's own branches. */
+/** Destructive operations only ever touch the factory's own branches: jobs' and their proof. */
 function factoryOnly(op: string, branch: string): void {
-  if (!branch.startsWith('factory/')) throw new Error(`refusing to ${op} "${branch}": not a factory/ branch`)
+  if (!branch.startsWith('factory/') && !branch.startsWith('factory-proof/')) {
+    throw new Error(`refusing to ${op} "${branch}": not a factory/ or factory-proof/ branch`)
+  }
 }
 
 export class Git {

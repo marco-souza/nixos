@@ -348,11 +348,16 @@ describe('feedback', () => {
 })
 
 describe('discard', () => {
-  test('discard removes worktree and branch and keeps the job folder', async () => {
+  test('discard removes worktree, branch and proof branch, and keeps the job folder', async () => {
     const t = await setup({ branches: true })
     await t.job({ stage: 'build', waitingFor: null, pr: PR }, true)
     expect(await git(t.repo, 'branch', '--list', `factory/${ID}`)).toContain(`factory/${ID}`)
+    await git(t.repo, 'push', 'origin', `HEAD:refs/heads/factory-proof/${ID}`)
+    const origin = await git(t.repo, 'remote', 'get-url', 'origin')
+    expect(await git(origin, 'branch', '--list', `factory-proof/${ID}`)).toContain(`factory-proof/${ID}`)
     const job = await discard(t.repo, ID, t.deps)
+    expect(await git(origin, 'branch', '--list', `factory-proof/${ID}`)).toBe('')
+    expect(t.out).toContain(`✓ delete branch factory-proof/${ID}`)
     expect(job.stage).toBe('discarded')
     expect(existsSync(t.paths.worktree)).toBe(false)
     expect(await git(t.repo, 'branch', '--list', `factory/${ID}`)).toBe('')

@@ -8,7 +8,7 @@ import { prNumber } from '../ui'
 import { failed, ok, requireJob, transition, type Args, type Cli } from './shared'
 
 /**
- * Stops the session, removes the worktree, closes the PR, deletes the branch and marks the job discarded.
+ * Stops the session, removes the worktree, closes the PR, deletes the branch and the proof branch, and marks the job discarded.
  * Each step is best effort: a failure is printed and the rest still runs. The job folder stays.
  */
 export async function discard(repo: string, id: string, deps: Deps): Promise<Job> {
@@ -29,6 +29,8 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
   if (existsSync(job.worktree)) await attempt('remove worktree', () => deps.git.removeWorktree(job.worktree))
   if (job.pr) await attempt(`close PR ${prNumber(job.pr)}`, () => deps.gh.close(job.pr!))
   await attempt(`delete branch ${job.branch}`, () => deps.git.deleteBranch(job.branch))
+  // The proof screenshots finalize pushed; only on the remote, so a missing local one is fine.
+  await attempt(`delete branch factory-proof/${id}`, () => deps.git.deleteBranch(`factory-proof/${id}`))
   const next = transition(repo, id, { kind: 'discard' }, deps, { running: [] })
   deps.log(ok(`discarded ${id}; its folder stays: ${relative(repo, jobPaths(repo, id).jobDir)}`))
   return next
