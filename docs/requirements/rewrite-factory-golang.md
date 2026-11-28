@@ -57,8 +57,11 @@ must be rebased onto `f7fb2cf` before the build.
    keyboard shortcuts and live refresh. The look is new.
 8. The dashboard is served on `localhost`, with no auth.
 9. A job's docs (requirements, tech discovery, design, spec, test plan) stay
-   in `.factory/jobs/<id>/` and are never committed to the repo. The PR body
-   links to them.
+   in `.factory/jobs/<id>/docs/` and never leave the machine. They are never
+   committed to the job's branch and never pushed to the remote, the
+   `factory-proof/<id>` ref included; that ref carries only proof files. The
+   PR body's `Docs:` line lists the job-folder paths of the docs as plain
+   text, not links.
 10. The proof ref is pushed with `--no-verify`, so the repo's pre-push hook
     does not run on it.
 11. When a command the factory runs fails, the reason shown includes the last
@@ -139,7 +142,8 @@ must be rebased onto `f7fb2cf` before the build.
   they are fixed". Job docs stay in the job folder and are linked from the PR
   body; the proof ref is pushed with `--no-verify`; a failure shows the last
   lines of output. The file is untracked in the main checkout, so Marco
-  deletes it after merge (grill)
+  deletes it after merge. How the PR body refers to the docs was later
+  settled by the design question below (grill)
 - Reference code: "main" means the local main checkout as it runs today,
   commit `f7fb2cf` (answer, unblock, headless grill, no attach); main was
   pushed, so `origin/main` is `f7fb2cf` too and PR #3 is merged. Ignore the
@@ -160,6 +164,13 @@ must be rebased onto `f7fb2cf` before the build.
   `gh`, `pi` or MCP connectors; no tmux, since the reference dropped it
   (grill)
 - Playback: confirmed (grill)
+- Where the PR body's links to the job docs point, now that the docs stay in
+  `.factory/jobs/<id>/docs/`: "Local only: the docs never leave your
+  machine. The PR's `Docs:` line lists the job-folder paths as plain text.
+  Reviewers can't open them, and you read them in the dashboard." The docs
+  are not committed to the branch and not pushed to `factory-proof/<id>`,
+  which keeps carrying only proof files (design questions)
+- Playback of that change: confirmed (design questions)
 
 ## Access
 
