@@ -28,6 +28,15 @@ Request: `
 /** No dots: that rules out `..`, `.lock` and the other names git refuses. */
 const BRANCH = /^\w[\w-]*(\/\w[\w-]*)*$/
 
+/** The first ticket key `text` mentions, alone or in a URL: `ABC-123`. */
+export const ticketOf = (text: string): string | null => /\b[A-Z][A-Z0-9]+-\d+\b/.exec(text)?.[0] ?? null
+
+/** One casing rule: lowercase, but a middle part shaped like a ticket key is uppercase (`fix/ABC-2/raise-timeout`). */
+export function caseBranch(branch: string): string {
+  const parts = branch.toLowerCase().split('/')
+  return parts.map((p, i) => (i > 0 && i < parts.length - 1 && /^[a-z][a-z0-9]*-\d+$/.test(p) ? p.toUpperCase() : p)).join('/')
+}
+
 /** A branch name for `feature`, from the default harness's low-tier model; `feature/<slug>` when that fails. */
 export async function nameBranch(feature: string, cfg: FactoryConfig, exec: Exec, repo: string): Promise<string> {
   const model = cfg.models[cfg.defaultHarness]?.low
@@ -37,12 +46,14 @@ export async function nameBranch(feature: string, cfg: FactoryConfig, exec: Exec
     : ['claude', '-p', prompt, '--strict-mcp-config', ...(model ? ['--model', model] : [])]
   const r = await exec.run(cmd, { cwd: repo }).catch(() => null)
   const name = r?.code === 0 ? (r.stdout.trim().split('\n').at(-1) ?? '').replace(/`/g, '').trim() : ''
-  return BRANCH.test(name) ? name : `feature/${slugify(feature)}`
+  return BRANCH.test(name) ? caseBranch(name) : `feature/${slugify(feature)}`
 }
 
-/** The branch's last part, made safe for folder and tmux session names. */
+/** The branch without its type, made safe for folder names: `fix/ABC-123/raise-timeout` → `abc-123-raise-timeout`. */
 export function jobIdFor(branch: string): string {
-  return (branch.split('/').at(-1) ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'job'
+  const parts = branch.split('/')
+  const name = (parts.length > 1 ? parts.slice(1) : parts).join('-')
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'job'
 }
 
 function names(dir: string, strip = ''): string[] {

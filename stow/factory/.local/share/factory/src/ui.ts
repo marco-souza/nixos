@@ -1,6 +1,6 @@
-import { dirname, relative } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import type { Job } from './job'
-import { GROUPS, STEPS } from './prbody'
+import { groupsOf, stepsFor } from './prbody'
 import { useColor } from './tail'
 
 export type Color = 'dim' | 'bold' | 'green' | 'red' | 'yellow' | 'gold' | 'cyan'
@@ -32,13 +32,16 @@ function show(job: Job, file: string): string {
 }
 
 const judgeFile = (job: Job) => job.questionsFile ?? job.reasonFile
+/** `<repo>/.factory/jobs/<id>/report.md`, from the worktree path `<repo>/.factory/<id>`. */
+const reportFile = (job: Job) => join(dirname(job.worktree), 'jobs', job.id, 'report.md')
 
 /** What the human needs to do for a waiting job; null when it needs nothing. */
 export function whatFor(job: Job): string | null {
   switch (job.stage) {
     case 'requirements':
-      return 'Answer the grill'
+      return 'Answer the grill questions'
     case 'human-review':
+      if (job.deliverable === 'report') return `Read the report: ${show(job, reportFile(job))}`
       return `Review the PR${job.pr ? `: ${job.pr}` : ''}`
     case 'needs-human': {
       const file = judgeFile(job)
@@ -56,20 +59,20 @@ export function nextHint(job: Job): string | null {
   const respond = `factory approve ${id}   or   factory feedback ${id} "…"`
   switch (job.stage) {
     case 'requirements':
-      return `factory attach ${id}`
+      return `factory answer ${id}`
     case 'human-review':
       return respond
     case 'needs-human': {
       if (job.capHit === 'env') return `factory run ${id} once QA is back   or   factory approve ${id}   or   factory discard ${id}`
       const file = judgeFile(job)
       if (job.waitingFor === 'escalation') return file ? `${respond}   (see ${show(job, file)})` : respond
-      return `factory run ${id} to retry   or   factory discard ${id}`
+      return `factory unblock ${id} "<decision>"   or   factory run ${id} to retry   or   factory discard ${id}`
     }
     case 'done':
     case 'discarded':
       return null
   }
-  return `factory attach ${id} to watch`
+  return `factory logs ${id} -f to watch`
 }
 
 const WIDTH = 80
@@ -103,9 +106,11 @@ function counter(job: Job): string {
 /** `Discovery ✓ ─ Building ● review 3/5 ─ Validation ○ ─ Deploy ○` */
 export function pipelineLine(job: Job): string {
   const current = job.stage === 'needs-human' ? job.resumeStage : job.stage
-  const step = STEPS.find((s) => s.stage === current)
-  const at = step ? GROUPS.indexOf(step.group) : -1
-  const groups = GROUPS.map((g, i) => {
+  const steps = stepsFor(job)
+  const all = groupsOf(steps)
+  const step = steps.find((s) => s.stage === current)
+  const at = step ? all.indexOf(step.group) : -1
+  const groups = all.map((g, i) => {
     if (job.stage === 'done') return `${g} ${paint('green', '✓')}`
     if (job.stage === 'discarded') return `${g} ${job.planned && i === 0 ? paint('green', '✓') : paint('dim', '○')}`
     if (i < at) return `${g} ${paint('green', '✓')}`

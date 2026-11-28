@@ -3,9 +3,10 @@ import { join } from 'node:path'
 import type { FactoryConfig } from './config'
 import type { Deps } from './deps'
 import {
-  builderFor, checkOutput, hasHumanQuestions, outputPath, parseDiscoveryReview, parsePlan, parseTestPlan, SPECIALISTS,
-  type Check, type OutputKind,
+  builderFor, checkOutput, hasHumanQuestions, outputPath, parseDiscoveryReview, parsePlan, parseRequirements,
+  parseTestPlan, SPECIALISTS, type Check, type OutputKind,
 } from './handoff'
+import { ticketOf } from './ids'
 import { runHook, waitQaReady, type HookEnv, type HookName } from './hooks'
 import type { Job, Stage, TripRecord } from './job'
 import type { Outcome } from './machine'
@@ -95,13 +96,18 @@ function browserTarget(c: Ctx, role: string, i: number): string | null {
 
 const push = (c: Ctx, force = false) => c.deps.git.push(c.job.worktree, c.job.branch, { force })
 
+/** Commit `doc` (with `alsoCommit`) and push. */
+async function commitDoc(c: Ctx, doc: DocName, alsoCommit: DocName[] = []): Promise<void> {
+  const paths = [doc, ...alsoCommit].map((d) => docRel(c, d))
+  if (await c.deps.git.commitPaths(c.job.worktree, paths, `${c.cfg.docsCommitType}: ${doc} for ${c.job.id}`)) c.note(`committed the ${doc} doc`)
+  await push(c)
+}
+
 /** Spawn the role that writes `doc`, then commit it (with `alsoCommit`) and push. */
 async function writeDoc(c: Ctx, role: string, doc: DocName, assignment: string, inputs: string[] = [], alsoCommit: DocName[] = []): Promise<AgentResult> {
   const [r] = await c.spawn([{ role, kind: DOCS[doc].kind, output: out(c, DOCS[doc].kind), assignment, inputs }])
   if (!r!.ok) return r!
-  const paths = [doc, ...alsoCommit].map((d) => docRel(c, d))
-  if (await c.deps.git.commitPaths(c.job.worktree, paths, `${c.cfg.docsCommitType}: ${doc} for ${c.job.id}`)) c.note(`committed the ${doc} doc`)
-  await push(c)
+  await commitDoc(c, doc, alsoCommit)
   return r!
 }
 
@@ -139,7 +145,25 @@ async function qaUrl(c: Ctx): Promise<void> {
   }
 }
 
-export const prTitle = (feature: string) => `[factory] ${feature.replace(/\s+/g, ' ').trim()}`.slice(0, 72).trimEnd()
+/**
+ * `template` with `{type}`, `{ticket}` and `{summary}` filled in. A placeholder with no value goes, with the brackets
+ * or separator around it: `[{type}][{ticket}] {summary}` and no ticket gives `[fix] Raise the cache timeout`.
+ */
+export function renderTitle(template: string, v: { type: string | null; ticket: string | null; summary: string }): string {
+  return template
+    .replace(/\{(type|ticket|summary)\}/g, (_, k: 'type' | 'ticket' | 'summary') => v[k] ?? '')
+    .replace(/\[\s*\]|\(\s*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** The PR title for `summary`: the configured template, or `summary` as it is. */
+function prTitle(c: Ctx, summary: string): string {
+  const s = summary.replace(/\s+/g, ' ').trim()
+  if (!c.cfg.prTitle) return s
+  const [type, ...rest] = c.job.branch.split('/')
+  return renderTitle(c.cfg.prTitle, { type: rest.length ? type! : null, ticket: ticketOf(c.job.feature), summary: s })
+}
 
 /** Find or open the draft PR, run prOpened if it hasn't passed yet, then ask for the QA env. */
 async function ensurePr(c: Ctx): Promise<void> {
@@ -151,7 +175,8 @@ async function ensurePr(c: Ctx): Promise<void> {
     } else {
       const bodyFile = join(c.paths.jobDir, 'pr-body.md')
       writeFileSync(bodyFile, initialBody(c.job))
-      const pr = await c.deps.gh.createDraftPr({ branch: c.job.branch, base: c.cfg.base, title: prTitle(c.job.feature), bodyFile })
+      const title = prTitle(c, parseRequirements(read(out(c, 'requirements'))).title)
+      const pr = await c.deps.gh.createDraftPr({ branch: c.job.branch, base: c.job.base, title, bodyFile })
       c.update({ pr })
       c.note(`opened draft PR ${pr}`)
     }
@@ -166,15 +191,42 @@ function reworkInputs(c: Ctx): string[] {
   return c.job.discovery[n - 1]?.verdict === 'REWORK' ? [c.paths.discoveryReview(n)] : []
 }
 
+/** The grill (driver.ts `grillTurn`) wrote and checked the doc; this takes the deliverable it settled. */
 const requirements: Step = async (c) => {
-  const inputs = present(c.job.questionsFile, c.job.reasonFile)
-  const assignment = inputs.length
-    ? 'Go through the Inputs with the human and update the requirements doc.'
-    : 'Grill the human about the request and write the requirements doc.'
-  const r = await writeDoc(c, 'requirements', 'requirements', assignment, inputs)
-  if (!r.ok) return failed('requirements', r.problem)
-  await ensurePr(c)
+  c.update({ deliverable: parseRequirements(read(out(c, 'requirements'))).deliverable })
   return done('requirements')
+}
+
+/**
+ * Before any long work: check every access the requirements list (connectors, logins, CLIs, accounts), then, for a PR,
+ * commit the doc and open the draft PR. A missing access stops the job here, with no PR.
+ */
+const preflight: Step = async (c) => {
+  const { access } = parseRequirements(read(out(c, 'requirements')))
+  if (access.length) {
+    const [r] = await c.spawn([{
+      role: 'access-checker', kind: 'access', output: out(c, 'access'), resume: false,
+      assignment: 'Check every item under "## Access" in the requirements doc.',
+    }])
+    if (!r!.ok) return failed('preflight', r!.problem)
+    if (r!.verdict === 'BLOCKED') return failed('preflight', `access-checker: ${blockedLine(r!.text)}`)
+  }
+  if (c.job.deliverable === 'report') return done('preflight')
+  await commitDoc(c, 'requirements')
+  await ensurePr(c)
+  return done('preflight')
+}
+
+/** A report job's one work step: no code, no branch pushed, no PR. Feedback comes back here. */
+const report: Step = async (c) => {
+  const inputs = present(c.job.reasonFile)
+  const assignment = inputs.length
+    ? 'Revise the report for the feedback in Inputs.'
+    : 'Do what the requirements doc asks for and write the report.'
+  const [r] = await c.spawn([{ role: 'reporter', kind: 'report', output: out(c, 'report'), assignment, inputs }])
+  if (!r!.ok) return failed('report', r!.problem)
+  if (r!.verdict === 'BLOCKED') return failed('report', `reporter: ${blockedLine(r!.text)}`)
+  return done('report')
 }
 
 const techDiscovery: Step = async (c) => {
@@ -293,7 +345,7 @@ const testPlanning: Step = async (c) => {
 }
 
 const rebase: Step = async (c) => {
-  const base = c.cfg.base
+  const base = c.job.base
   if ((await c.deps.git.rebase(c.job.worktree, base)) === 'conflict') {
     c.note(`rebase onto origin/${base} conflicts; starting the resolver`)
     // An earlier rebase.md can't count: the branch still conflicts.
@@ -370,12 +422,17 @@ function openSection(job: Job, gaps: number[]): string {
 }
 
 const finalize: Step = async (c) => {
+  if (c.job.deliverable === 'report') return done('finalize')
   const pr = c.job.pr
   if (!pr) return failed('finalize', 'no pull request to finalize')
   const sha = await pushProof(c.deps.exec, c.repo, c.paths.proofDir, c.job.id, join(c.paths.runDir, 'proof.index'))
   const proof = sha ? readdirSync(c.paths.proofDir).sort() : []
   const inputs = ['build.md', 'validation-judge.md'].map((f) => join(tripDir(c), f)).filter((f) => existsSync(f))
-  const [r] = await c.spawn([{ role: 'summarizer', kind: 'pr', output: out(c, 'pr'), assignment: 'Write the pull request: its title as the first line, then the body.', inputs }])
+  const title = c.cfg.prTitle
+    ? `a short summary only: the factory formats the title as "${c.cfg.prTitle}"`
+    : "the title in the repo's convention"
+  const assignment = `Write the pull request: the first line is "# " and ${title}; then the body.`
+  const [r] = await c.spawn([{ role: 'summarizer', kind: 'pr', output: out(c, 'pr'), assignment, inputs }])
   if (!r!.ok) return failed('finalize', r!.problem)
   const [first, ...rest] = r!.text.split(/\r?\n/)
   const spec = out(c, 'spec')
@@ -385,7 +442,7 @@ const finalize: Step = async (c) => {
   if (sha) parts.push(proofSection(await c.deps.gh.nameWithOwner(), sha, proof))
   const bodyFile = join(c.paths.jobDir, 'pr-body.md')
   writeFileSync(bodyFile, `${parts.filter(Boolean).join('\n\n')}\n`)
-  await c.deps.gh.editTitle(pr, first!.replace(/^#\s+/, '').trim())
+  await c.deps.gh.editTitle(pr, prTitle(c, first!.replace(/^#\s+/, '')))
   await c.deps.gh.editBody(pr, bodyFile)
   if (ready) await c.deps.gh.ready(pr)
   c.note(ready ? `PR ready for review: ${pr}` : `PR stays a draft: ${pr}`)
@@ -395,6 +452,8 @@ const finalize: Step = async (c) => {
 /** The effect of every stage the driver runs; waiting stages have none. */
 export const STAGES: Partial<Record<Stage, Step>> = {
   requirements,
+  preflight,
+  report,
   'tech-discovery': techDiscovery,
   design,
   'discovery-review': discoveryReview,

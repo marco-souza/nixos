@@ -119,7 +119,7 @@ interface Seed {
 function seed(repo: string, s: Seed, slot: number): Job {
   const id = `${today}-${s.slug}`
   const paths = jobPaths(repo, id)
-  const base = createJob({ id, branch: `feature/${id}`, feature: s.feature, repo, slot, now: ago(s.minutes) })
+  const base = createJob({ id, branch: `feature/${id}`, base: 'main', feature: s.feature, repo, slot, now: ago(s.minutes) })
   const job: Job = { ...base, ...s.job }
   if (job.questionsFile) job.questionsFile = join(paths.jobDir, job.questionsFile)
   if (job.reasonFile) job.reasonFile = join(paths.jobDir, job.reasonFile)

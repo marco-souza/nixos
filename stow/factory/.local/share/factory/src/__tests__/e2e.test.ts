@@ -3,9 +3,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, delimiter, dirname, join } from 'node:path'
 import { approve } from '../commands/approve'
 import { feedback } from '../commands/feedback'
-import { newJob } from '../commands/new'
+import { retry } from '../commands/run'
+import { discard } from '../commands/discard'
+import { newJob, type NewOptions } from '../commands/new'
+import { unblock } from '../commands/unblock'
 import type { Deps } from '../deps'
-import { runJob } from '../driver'
+import { grillTurn, runJob } from '../driver'
 import { realExec, type Exec, type ExecResult } from '../exec'
 import { Git, GitHub } from '../git'
 import { loadJob, type Job } from '../job'
@@ -17,24 +20,23 @@ import { tempRepo } from './helpers'
 const FAKE_AGENT = join(import.meta.dir, 'fixtures', 'fake-agent.ts')
 const PR = 'https://github.com/o/r/pull/1'
 
-/** Real `claude`, `pi`, `gh` and `tmux` must never run: first on PATH for every process the e2e starts, they fail. */
-const STUBS = ['claude', 'pi', 'gh', 'tmux']
+/** Real `claude`, `pi` and `gh` must never run: first on PATH for every process the e2e starts, they fail. */
+const STUBS = ['claude', 'pi', 'gh']
 const stubMessage = (name: string) => `e2e: real ${name} must not run`
 
 /**
- * gh is answered in process and recorded; tmux only answers the presence check. A run script must start the fake
+ * gh is answered in process and recorded. A run script must start the fake
  * agent. Everything else (git, bash, bun, hooks) runs for real, with the stubs first on PATH.
  */
 class E2eExec implements Exec {
   gh: string[][] = []
-  /** gh and tmux calls the fakes don't answer; afterEach asserts there are none. */
+  /** gh calls the fakes don't answer; afterEach asserts there are none. */
   unexpected: string[] = []
   body = ''
   private open = false
   constructor(private path: string) {}
 
   async run(cmd: string[], opts: { cwd?: string; env?: Record<string, string>; input?: string } = {}): Promise<ExecResult> {
-    if (cmd[0] === 'tmux') return cmd[1] === '-V' && cmd.length === 2 ? ok('tmux 3.5\n') : this.refuse(cmd)
     if (cmd[0] === 'gh') return this.fakeGh(cmd)
     // `factory new` naming the branch.
     if (cmd[0] === 'claude') return ok('feature/RATE-1/add-rate-limiting\n')
@@ -51,7 +53,7 @@ class E2eExec implements Exec {
     const flag = (name: string) => args[args.indexOf(name) + 1]!
     const [a, b] = args
     if (a === 'auth' && b === 'status') return ok()
-    if (a === 'repo' && b === 'view') return ok('o/r\n')
+    if (a === 'repo' && b === 'view') return ok(args.includes('.defaultBranchRef.name') ? 'main\n' : 'o/r\n')
     if (a === 'api') return ok('[]')
     if (a === 'pr' && b === 'list') return ok(JSON.stringify(this.open ? [{ url: PR }] : []))
     if (a === 'pr' && b === 'create') {
@@ -59,6 +61,8 @@ class E2eExec implements Exec {
       this.body = readFileSync(flag('--body-file'), 'utf8')
       return ok(`${PR}\n`)
     }
+    if (a === 'pr' && b === 'view' && flag('--json') === 'headRefName') return ok('develop\n')
+    if (a === 'pr' && b === 'close') return ok()
     if (a === 'pr' && b === 'view' && flag('--json') === 'body') return ok(this.body)
     if (a === 'pr' && b === 'view' && flag('--json') === 'comments,reviews') return ok('{"comments":[],"reviews":[]}')
     if (a === 'pr' && b === 'edit' && args.includes('--body-file')) {
@@ -91,11 +95,20 @@ afterEach(async () => {
   }
 })
 
+interface SetupOptions {
+  /** Merged into .factory.json. */
+  config?: Record<string, unknown>
+  /** For `factory new`. */
+  new?: NewOptions
+  /** Runs before `factory new`, with a git runner. */
+  before?(git: (cwd: string, ...args: string[]) => Promise<string>, repo: string): Promise<void>
+}
+
 /**
- * A real repo with a bare origin, hooks that log to a file, and `factory new` already run. Agents are fake-agent.ts
- * processes run inline, answering from `scenario`.
+ * A real repo with a bare origin, hooks that log to a file, and `factory new` and the grill already run (unless
+ * `grill` is false). Agents are fake-agent.ts processes run inline, answering from `scenario`.
  */
-async function setup(scenario: Record<string, string[]> = {}) {
+async function setup(scenario: Record<string, string[]> = {}, grill = true, o: SetupOptions = {}) {
   const t = await tempRepo()
   cleanups.push(t.cleanup)
   const root = dirname(t.repo)
@@ -108,6 +121,7 @@ async function setup(scenario: Record<string, string[]> = {}) {
         qaUrl: 'echo "https://qa.example/$JOB"',
         qaReady: `echo "qaReady $SHA" >> ${shq(hookLog)}`,
       },
+      ...o.config,
     }),
   )
   const scenarioFile = join(root, 'scenario.json')
@@ -141,10 +155,13 @@ async function setup(scenario: Record<string, string[]> = {}) {
     },
     log: (line) => logs.push(line),
   }
-  const { id } = await newJob(t.repo, 'Add rate limiting', deps, { attach: false })
+  await o.before?.(git, t.repo)
+  const { id } = await newJob(t.repo, 'Add rate limiting', deps, o.new)
   const paths = jobPaths(t.repo, id)
+  const asked = grill ? await grillTurn(t.repo, id, deps, null) : null
+  if (grill) await grillTurn(t.repo, id, deps, 'Admins, please.')
   return {
-    ...t, exec, deps, notes, logs, id, paths, git,
+    ...t, exec, deps, notes, logs, id, paths, git, asked,
     run: () => runJob(t.repo, id, deps),
     load: () => loadJob(paths.jobFile) as Job,
     hooks: () => (existsSync(hookLog) ? readFileSync(hookLog, 'utf8').trim().split('\n') : []),
@@ -157,7 +174,9 @@ async function setup(scenario: Record<string, string[]> = {}) {
 describe('factory end to end (real git, real roles, inline fake agents)', () => {
   test('happy path: new → human-review → approve → done', async () => {
     const t = await setup()
-    expect(t.logs).toContain(`Answer the grill: factory attach ${t.id}`)
+    expect(t.asked).toMatchObject({ kind: 'question' })
+    expect(readFileSync(join(t.paths.grillDir, 'transcript.md'), 'utf8')).toContain('## Answer\n\nAdmins, please.')
+    expect(t.load().stage).toBe('tech-discovery')
     // main moves on while the job runs, so the rebase has something to do.
     writeFileSync(join(t.repo, 'main.txt'), 'main\n')
     await t.git(t.repo, 'add', 'main.txt')
@@ -166,7 +185,7 @@ describe('factory end to end (real git, real roles, inline fake agents)', () => 
 
     expect(await t.run()).toBe('waiting')
     expect(t.load()).toMatchObject({ stage: 'human-review', waitingFor: 'human-review', pr: PR, cycle: 1, trip: 1, running: [] })
-    expect(t.notes).toEqual([`Answer the grill: factory attach ${t.id}`, `Review the PR: ${PR}`])
+    expect(t.notes).toEqual([`Review the PR: ${PR}`])
 
     await approve(t.repo, t.id, t.deps)
     expect(await t.run()).toBe('done')
@@ -252,20 +271,19 @@ describe('factory end to end (real git, real roles, inline fake agents)', () => 
 
     expect(t.exec.calls('pr', 'ready')).toEqual([['pr', 'ready', PR], ['pr', 'ready', PR, '--undo'], ['pr', 'ready', PR]])
     expect(t.trips()).toEqual(['trip-1', 'trip-2'])
-    expect(t.id).toBe('add-rate-limiting')
+    expect(t.id).toBe('rate-1-add-rate-limiting')
     expect(await t.origin('log', '--format=%s', 'feature/RATE-1/add-rate-limiting')).toContain(`feat: t1 for ${t.id} (cycle 2 trip 1)`)
   }, 20_000)
 
   test('without commandFor a run fails fast and no real agent starts', async () => {
-    const t = await setup()
+    const t = await setup({}, false)
     delete t.deps.commandFor
-    expect(await t.run()).toBe('waiting')
-    expect(t.load()).toMatchObject({
-      stage: 'needs-human', resumeStage: 'requirements', running: [],
-      reason: 'e2e: requirements-1.sh does not run the fake agent; a real agent must not run',
-    })
+    await expect(grillTurn(t.repo, t.id, t.deps, null)).rejects.toThrow(
+      'e2e: requirements-1.sh does not run the fake agent; a real agent must not run',
+    )
+    expect(t.load()).toMatchObject({ stage: 'requirements', running: [] })
     // The run script would have started the real grill; it never ran.
-    expect(readFileSync(join(t.paths.runDir, 'requirements-1.sh'), 'utf8')).toContain('\nclaude "$(cat ')
+    expect(readFileSync(join(t.paths.runDir, 'requirements-1.sh'), 'utf8')).toContain('\nclaude -p "$(cat ')
     expect(existsSync(join(t.paths.doneDir, 'requirements-1'))).toBe(false)
     expect(existsSync(join(t.paths.logsDir, 'requirements-1.log'))).toBe(false)
     // Whatever gets past that guard finds the stubs first on PATH.
@@ -273,4 +291,111 @@ describe('factory end to end (real git, real roles, inline fake agents)', () => 
       expect(await t.exec.run(['bash', '-c', `${name} -p hi`])).toEqual({ code: 99, stdout: '', stderr: `${stubMessage(name)}\n` })
     }
   })
+})
+
+describe('per-job base, deliverable, access, unblock, archive', () => {
+  test('a stacked job starts from the PR head, opens its PR against it, and titles it from the template', async () => {
+    const t = await setup({}, true, {
+      config: { prTitle: '[{type}][{ticket}] {summary}' },
+      new: { stack: '7' },
+      before: async (git, repo) => {
+        await git(repo, 'checkout', '-q', '-b', 'develop')
+        await git(repo, 'commit', '-q', '--allow-empty', '-m', 'develop work')
+        await git(repo, 'push', '-q', 'origin', 'develop')
+        await git(repo, 'checkout', '-q', 'main')
+      },
+    })
+    const job = t.load()
+    expect(job.base).toBe('develop')
+    const create = t.exec.calls('pr', 'create')[0]!
+    expect(create[create.indexOf('--base') + 1]).toBe('develop')
+    // The request names no ticket: its brackets go.
+    expect(create[create.indexOf('--title') + 1]).toBe(`[feature] Requirements for ${t.id}`)
+    expect(t.task('requirements-1')).toContain('Base: develop')
+    expect(await t.git(job.worktree, 'log', '--format=%s', '-1', 'HEAD~1')).toBe('develop work')
+
+    expect(await t.run()).toBe('waiting')
+    await approve(t.repo, t.id, t.deps)
+    expect(await t.run()).toBe('done')
+    expect(t.exec.calls('pr', 'edit', PR, '--title')).toEqual([['pr', 'edit', PR, '--title', '[feature] Add rate limiting']])
+    expect(t.task('summarizer-1')).toContain('the factory formats the title as "[{type}][{ticket}] {summary}"')
+  }, 20_000)
+
+  test('a report job: no PR or push, a blocked reporter resumes with the decision, then delivers', async () => {
+    const t = await setup({ deliverable: ['report'], reporter: ['BLOCKED', 'READY'] })
+    expect(t.load()).toMatchObject({ stage: 'report', deliverable: 'report' })
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'needs-human', waitingFor: 'failure', reason: 'reporter: blocked: The sheet is not shared with you.' })
+
+    await unblock(t.repo, t.id, 'Use the copy in the team drive.', t.deps)
+    expect(t.load()).toMatchObject({ stage: 'report', decisions: [t.paths.decision(1)] })
+    expect(readFileSync(t.paths.decision(1), 'utf8')).toContain('Use the copy in the team drive.')
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'human-review', waitingFor: 'human-review' })
+    expect(t.task('reporter-2')).toContain(t.paths.decision(1))
+    expect(t.notes.at(-1)).toBe(`Read the report: .factory/jobs/${t.id}/report.md`)
+
+    await approve(t.repo, t.id, t.deps)
+    expect(await t.run()).toBe('done')
+    expect(t.exec.calls('pr')).toEqual([])
+    expect(t.load().branch).toBe('feature/RATE-1/add-rate-limiting')
+    await expect(t.origin('rev-parse', '--verify', 'feature/RATE-1/add-rate-limiting')).rejects.toThrow()
+  }, 20_000)
+
+  test('a missing access stops the job in preflight, before any PR; a retry goes on', async () => {
+    const t = await setup({ access: ['gh CLI logged in'], 'access-checker': ['BLOCKED', 'READY'] })
+    expect(t.load()).toMatchObject({
+      stage: 'needs-human', waitingFor: 'failure', resumeStage: 'preflight',
+      reason: 'access-checker: blocked: gh CLI logged in: not logged in. Fix: run gh auth login',
+    })
+    expect(t.exec.calls('pr', 'create')).toEqual([])
+    await retry(t.repo, t.id, t.deps)
+    expect(await t.run()).toBe('waiting')
+    expect(t.load()).toMatchObject({ stage: 'human-review', pr: PR })
+    expect(readFileSync(t.paths.accessFile, 'utf8')).toStartWith('STATUS: READY')
+  }, 20_000)
+
+  test('discard archives the job folder, so the next job gets the same id', async () => {
+    const t = await setup()
+    await discard(t.repo, t.id, t.deps)
+    expect(existsSync(t.paths.jobDir)).toBe(false)
+    expect(readdirSync(join(t.paths.factoryDir, 'archive'))).toEqual([expect.stringMatching(new RegExp(`^${t.id}-\\d+$`))])
+    const again = await newJob(t.repo, 'Add rate limiting', t.deps)
+    expect(again.id).toBe(t.id)
+  }, 20_000)
+})
+
+describe('the grill', () => {
+  test('a turn asks, shows the pending question again, takes the answer, then finishes', async () => {
+    const t = await setup({}, false)
+    const first = await grillTurn(t.repo, t.id, t.deps, null)
+    expect(first).toMatchObject({ kind: 'question' })
+    expect((first as { text: string }).text).toContain('Who is it for?')
+    // No answer yet: the same question, and no new agent.
+    expect(await grillTurn(t.repo, t.id, t.deps, null)).toEqual(first)
+    expect(existsSync(join(t.paths.runDir, 'requirements-2.task.md'))).toBe(false)
+    const done = await grillTurn(t.repo, t.id, t.deps, 'Admins.')
+    expect(done).toMatchObject({ kind: 'done', job: { stage: 'tech-discovery' } })
+    expect(t.task('requirements-2')).toContain(join(t.paths.grillDir, 'transcript.md'))
+    expect(t.load()).toMatchObject({ stage: 'tech-discovery', pr: PR })
+  }, 20_000)
+
+  test('a long turn logs a heartbeat with its latest tool call', async () => {
+    const t = await setup({ sleepMs: ['600'] }, false)
+    t.deps.heartbeatMs = 100
+    await grillTurn(t.repo, t.id, t.deps, null)
+    expect(t.logs.some((l) => new RegExp(`^… ${t.id}: requirements running \\d+s, last: Read  AGENTS\\.md$`).test(l))).toBe(true)
+    const beats = t.logs.length
+    await Bun.sleep(250)
+    // Stopped with the agent.
+    expect(t.logs.length).toBe(beats)
+  }, 20_000)
+
+  test('an answer with no pending question, or outside the grill, is refused', async () => {
+    const t = await setup({}, false)
+    await expect(grillTurn(t.repo, t.id, t.deps, 'hi')).rejects.toThrow(`no question is pending for ${t.id}`)
+    await grillTurn(t.repo, t.id, t.deps, null)
+    await grillTurn(t.repo, t.id, t.deps, 'Admins.')
+    await expect(grillTurn(t.repo, t.id, t.deps, 'more')).rejects.toThrow('is not in the grill')
+  }, 20_000)
 })

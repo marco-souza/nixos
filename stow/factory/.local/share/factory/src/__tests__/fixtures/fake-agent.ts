@@ -9,8 +9,10 @@
  *
  * The scenario is a JSON object of verdicts per role, one per visit (`{"build-judge": ["CHANGES", "APPROVE"]}`);
  * a role without one (or past its last) gives its passing verdict. Visits are counted in `<scenarioFile>.counts`.
+ * Two keys shape the requirements doc instead: `deliverable` (`["report"]`) and `access` (its items). `sleepMs`
+ * makes every agent log one Read tool call, then wait that long.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 const [role, taskFile, scenarioFile] = process.argv.slice(2) as [string, string, string]
@@ -36,6 +38,45 @@ function verdict(fallback: string): string {
   const k = (counts[role] = (counts[role] ?? 0) + 1)
   writeFileSync(countsFile, JSON.stringify(counts))
   return scenario[role]?.[k - 1] ?? fallback
+}
+
+/** A scenario key that is not a role's verdicts. */
+function setting(key: string): string[] | undefined {
+  return (JSON.parse(readFileSync(scenarioFile, 'utf8')) as Record<string, string[]>)[key]
+}
+
+function requirements(): string {
+  const access = setting('access')?.map((a) => `- ${a}`).join('\n') ?? 'None.'
+  return `# Requirements for ${job}
+
+> Request: ${field('Request')}
+
+Deliverable: ${setting('deliverable')?.[0] ?? 'pr'}
+
+## Intent
+${field('Request')}
+
+## Requirements
+1. Limit requests.
+
+## Decisions
+- None.
+
+## Access
+${access}
+`
+}
+
+function access(): string {
+  const word = verdict('READY')
+  const blocked = word === 'BLOCKED' ? `### Blocked\n${setting('access')![0]}: not logged in. Fix: run gh auth login\n\n` : ''
+  return `STATUS: ${word}\n\n${blocked}## Checks\n${(setting('access') ?? []).map((a) => `- ${a}: gh auth status`).join('\n')}\n`
+}
+
+function report(): string {
+  const word = verdict('READY')
+  const blocked = word === 'BLOCKED' ? '\n### Blocked\nThe sheet is not shared with you.\n' : ''
+  return `STATUS: ${word}\n\n# Rate limit audit\n${blocked}\n## Summary\nNo limits today.\n\n## Findings\n- None.\n\n## Deliverables\nNone.\n\n## Open\nNone.\n`
 }
 
 function git(...args: string[]): void {
@@ -96,7 +137,9 @@ function validate(kind: string): string {
 }
 
 function content(): string {
-  if (role === 'requirements') return `# Requirements for ${job}\n\n## Intent\n${field('Request')}\n\n## Requirements\n1. Limit requests.\n\n## Decisions\n- None.\n`
+  if (role === 'requirements') return requirements()
+  if (role === 'access-checker') return access()
+  if (role === 'reporter') return report()
   if (role === 'tech-discoverer') return '# Tech discovery\n\n## Findings\n- One router.\n\n## Risks\n- None.\n'
   if (role === 'designer') return '# Design\n\n## Approach\nA middleware.\n\n## Alternatives\nA proxy.\n\n## Questions for the human\nNone\n'
   if (role === 'discovery-reviewer') return judged(verdict('PASS'), 'The docs match the request.')
@@ -112,6 +155,27 @@ function content(): string {
   throw new Error(`fake-agent: unknown role ${role}`)
 }
 
+/** The grill: a turn with no transcript asks a question; the next one (a transcript in Inputs) writes the doc. */
+function grillQuestion(): string | null {
+  const inputs = /^Inputs: (.+)$/m.exec(task)?.[1] ?? ''
+  if (inputs.includes('transcript.md')) return null
+  return field('Assignment').replace(/^.*Question file: /, '')
+}
+
+const sleepMs = Number(setting('sleepMs')?.[0] ?? 0)
+if (sleepMs) {
+  // Unbuffered, so the log has it while the agent still runs.
+  writeSync(1, `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'AGENTS.md' } }] } })}\n`)
+  Bun.sleepSync(sleepMs)
+}
+
 mkdirSync(dirname(output), { recursive: true })
-writeFileSync(output, content())
-console.log(`fake ${role}: wrote ${output}`)
+const question = role === 'requirements' ? grillQuestion() : null
+if (question) {
+  mkdirSync(dirname(question), { recursive: true })
+  writeFileSync(question, 'Who is it for?\nWhy: sets the access rules.\nOptions:\n1. Admins (recommended)\n2. Everyone\n')
+  console.log(`fake ${role}: asked ${question}`)
+} else {
+  writeFileSync(output, content())
+  console.log(`fake ${role}: wrote ${output}`)
+}

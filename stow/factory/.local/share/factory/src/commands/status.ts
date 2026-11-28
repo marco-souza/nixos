@@ -28,7 +28,10 @@ export async function statusCommand(args: Args, cli: Cli, repo: string): Promise
 /** One job: header, pipeline, what it needs, running agents, recent activity, next step. */
 function detail(repo: string, job: Job): string {
   const title = `${paint('bold', job.id)}${job.feature ? `  ${job.feature}` : ''}`
-  const facts = [job.stage, `cycle ${job.cycle}`, ...(job.trip > 0 ? [`trip ${job.trip}`] : []), ...(job.pr ? [job.pr] : [])]
+  const facts = [
+    job.stage, `cycle ${job.cycle}`, ...(job.trip > 0 ? [`trip ${job.trip}`] : []),
+    `base ${job.base}`, ...(job.deliverable === 'report' ? ['report'] : []), ...(job.pr ? [job.pr] : []),
+  ]
   const sections = [[title, facts.join(' · '), pipelineLine(job)]]
   const why = whatFor(job)
   const now = [...(why ? [`${paint('gold', 'Needs you:')} ${why}`] : []), ...(job.running.length ? [`Running: ${job.running.join(', ')}`] : [])]

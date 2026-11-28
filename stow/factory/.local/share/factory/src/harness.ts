@@ -13,7 +13,7 @@ export class HarnessError extends Error {
 }
 
 /**
- * The Playwright MCP server browser roles get, never the user's own. `--isolated`: browser roles that run side by
+ * The Playwright MCP server browser roles get, on top of the user's own. `--isolated`: browser roles that run side by
  * side in one worktree would otherwise share, and fight over, one persistent browser profile.
  */
 export const PLAYWRIGHT_MCP_CONFIG: string = join(PACKAGE_DIR, 'mcp', 'playwright.json')
@@ -62,7 +62,7 @@ export function renderTaskPrompt(ctx: TaskContext): string {
     `Worktree: ${job.worktree} (your working directory)`,
     `Job folder: ${paths.jobDir}`,
     `Cycle: ${job.cycle}  Trip: ${job.trip}`,
-    `Base: ${cfg.base}`,
+    `Base: ${job.base}`,
     `Docs: requirements=${doc(d.requirements)}, tech-discovery=${doc(d.techDiscovery)}, design=${doc(d.design)}, spec=${doc(d.specs)}, test-plan=${doc(d.testPlans)}`,
     `Assignment: ${ctx.assignment}`,
     `Output: ${ctx.output}`,
@@ -90,7 +90,6 @@ export function buildCommand(
   jobDir: string,
 ): string {
   const task = `"$(cat ${shq(files.task)})"`
-  const headless = !role.interactive
   if (h.harness === 'claude') {
     const allowed = [...role.tools.map((t) => CLAUDE_TOOLS[t]), ...(role.browser ? PLAYWRIGHT_TOOLS : [])]
     const denied = (Object.keys(CLAUDE_TOOLS) as NeutralTool[])
@@ -99,29 +98,28 @@ export function buildCommand(
       .concat('Agent')
     return [
       'claude',
-      ...(headless ? ['-p'] : []),
+      '-p',
       task,
       '--append-system-prompt-file', shq(files.system),
       ...(h.model ? ['--model', shq(h.model)] : []),
       '--permission-mode', 'auto',
       // Variadic like --mcp-config: each must be followed by another option, never by the prompt.
       '--add-dir', shq(jobDir),
-      // Only the servers named here: the user's MCP connectors stay out of reach of unattended agents.
-      '--strict-mcp-config',
+      // No --strict-mcp-config: agents get the user's MCP servers (tickets, Slack, docs). Auto mode gates risky calls.
       ...(role.browser ? ['--mcp-config', shq(PLAYWRIGHT_MCP_CONFIG)] : []),
       '--allowedTools', shq(allowed.join(',')),
       '--disallowedTools', shq(denied.join(',')),
-      ...(headless ? ['--output-format', 'stream-json', '--verbose'] : []),
+      '--output-format', 'stream-json', '--verbose',
     ].join(' ')
   }
   const tools = role.tools.flatMap((t) => PI_TOOLS[t])
   return [
     'pi',
-    ...(headless ? ['-p'] : []),
+    '-p',
     '--append-system-prompt', shq(files.system),
     ...(h.model ? ['--model', shq(h.model)] : []),
     '--tools', shq(tools.join(',')),
-    ...(headless ? ['--mode', 'json'] : []),
+    '--mode', 'json',
     task,
   ].join(' ')
 }

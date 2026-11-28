@@ -2,7 +2,6 @@ import type { Deps } from '../deps'
 import { runJob } from '../driver'
 import type { Job } from '../job'
 import { CommandError } from '../machine'
-import { hasTmux } from './attach'
 import { fail, ok, printNext, findJob, restartDriver, transition, type Args, type Cli } from './shared'
 
 /** Retries the step a `needs-human` job failed (one more trip at the trip cap) and restarts the driver. */
@@ -13,9 +12,9 @@ export async function retry(repo: string, id: string, deps: Deps): Promise<Job> 
 }
 
 /**
- * (Re)starts the driver in the job's tmux session and returns; a failed job is retried first. The driver never runs
- * as a child of this command, whose caller (an agent's shell) may not outlive it. `--inline` drives here instead,
- * agents included; `--here` is the driver window's own command.
+ * (Re)starts the driver in the background and returns; a failed job is retried first. The driver never runs as a
+ * child of this command, whose caller (an agent's shell) may not outlive it. `--inline` drives here instead, agents
+ * included; `--here` is the background driver's own command.
  */
 export async function runCommand(args: Args, cli: Cli, repo: string): Promise<number | void> {
   const id = args.pos[0]!
@@ -23,7 +22,6 @@ export async function runCommand(args: Args, cli: Cli, repo: string): Promise<nu
   if (args.flags.here === true) return drive(repo, id, cli.deps(repo, { inline: false }), cli)
   const inline = args.flags.inline === true
   const deps = cli.deps(repo, { inline })
-  if (!inline && !(await hasTmux(deps.exec))) throw new CommandError(`tmux is not installed (or drive it here: factory run ${id} --inline)`)
   if (job.stage === 'needs-human') {
     try {
       job = transition(repo, id, { kind: 'retry' }, deps)
@@ -36,12 +34,15 @@ export async function runCommand(args: Args, cli: Cli, repo: string): Promise<nu
     cli.out(`${id}: retrying from ${job.stage}`)
   }
   if (inline) {
-    // Inline agents get no terminal, and the grill is a conversation with the human.
-    if (job.stage === 'requirements') throw new CommandError('the grill needs a terminal; run without --inline')
     return drive(repo, id, deps, cli)
   }
+  if (job.stage === 'requirements') {
+    // The grill is a conversation, not a driver step.
+    printNext(job, cli)
+    return
+  }
   await restartDriver(job, deps)
-  cli.out(ok(`driver started in tmux session factory-${id}`))
+  cli.out(ok(`driver started in the background (log: .factory/jobs/${id}/logs/driver.log)`))
   printNext(job, cli)
 }
 

@@ -148,6 +148,15 @@ export class GitHub {
     if (origin.code !== 0) throw new Error('no origin remote')
   }
 
+  async defaultBranch(): Promise<string> {
+    return (await this.gh(['repo', 'view', '--json', 'defaultBranchRef', '-q', '.defaultBranchRef.name'])).stdout.trim()
+  }
+
+  /** The head branch of PR `pr` (a number or URL). */
+  async prHead(pr: string): Promise<string> {
+    return (await this.gh(['pr', 'view', pr, '--json', 'headRefName', '-q', '.headRefName'])).stdout.trim()
+  }
+
   async findPr(branch: string): Promise<string | null> {
     const r = await this.gh(['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1'])
     const list = JSON.parse(r.stdout || '[]') as { url: string }[]

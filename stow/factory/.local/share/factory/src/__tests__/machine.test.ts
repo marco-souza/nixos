@@ -9,7 +9,7 @@ const L: Limits = { maxTrips: 3, maxDiscoveryLoops: 3 }
 
 /** A job in `stage`; stages other than requirements start with no wait. */
 function job(o: Partial<Job> = {}): Job {
-  const base = createJob({ id: ID, branch: `factory/${ID}`, feature: 'f', repo: '/repo', slot: 1, now: earlier })
+  const base = createJob({ id: ID, branch: `factory/${ID}`, base: 'main', feature: 'f', repo: '/repo', slot: 1, now: earlier })
   const waits = o.stage && o.stage !== 'requirements' ? { waitingFor: null, waitingSince: null } : {}
   return { ...base, ...waits, ...o }
 }
@@ -21,7 +21,8 @@ const inTrip = (o: Partial<Job>) => job({ planned: true, trip: 1, trips: [rec(1,
 
 describe('route: linear stages', () => {
   test.each([
-    ['requirements', 'tech-discovery'],
+    ['requirements', 'preflight'],
+    ['preflight', 'tech-discovery'],
     ['tech-discovery', 'design'],
     ['design', 'discovery-review'],
     ['build', 'review'],
@@ -34,6 +35,12 @@ describe('route: linear stages', () => {
   ] as [Stage, Stage][])('%s → %s', (from, to) => {
     const j = route(job({ stage: from }), done(from), L, now)
     expect(j).toMatchObject({ stage: to, waitingFor: null, waitingSince: null })
+  })
+
+  test('a report job goes from preflight to report, then to the human', () => {
+    const r = route(job({ stage: 'preflight', deliverable: 'report' }), done('preflight'), L, now)
+    expect(r).toMatchObject({ stage: 'report', waitingFor: null })
+    expect(route(r, done('report'), L, now)).toMatchObject({ stage: 'human-review', waitingFor: 'human-review' })
   })
 
   test('planning done sets planned and goes to build', () => {
@@ -292,6 +299,11 @@ describe('applyCommand: feedback', () => {
     expect(j.trips).toEqual([])
   })
 
+  test('a report job writes the report again in a new cycle', () => {
+    const j = applyCommand(job({ stage: 'done', deliverable: 'report' }), { kind: 'feedback', file: '/feedback-1.md' }, now)
+    expect(j).toMatchObject({ stage: 'report', cycle: 2, trip: 0, reasonFile: '/feedback-1.md', waitingFor: null })
+  })
+
   test('feedback clears the wait it answers', () => {
     const j = applyCommand(
       inTrip({ stage: 'needs-human', waitingFor: 'escalation', resumeStage: 'test-planning', reason: 'x', capHit: null, questionsFile: '/judge.md' }),
@@ -381,6 +393,28 @@ describe('applyCommand: retry', () => {
   })
 })
 
+describe('applyCommand: unblock', () => {
+  test('a failure resumes the failed stage with the decision, in the same trip and cycle', () => {
+    const j = applyCommand(
+      inTrip({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'build', reason: 'blocked', decisions: ['/decision-1.md'] }),
+      { kind: 'unblock', file: '/decision-2.md' }, now,
+    )
+    expect(j).toMatchObject({ stage: 'build', cycle: 1, trip: 1, waitingFor: null, reason: null, decisions: ['/decision-1.md', '/decision-2.md'] })
+  })
+
+  test('a trip cap gets one more trip, like retry', () => {
+    const j = applyCommand(
+      inTrip({ stage: 'needs-human', waitingFor: 'failure', resumeStage: 'planning', capHit: 'trips' }),
+      { kind: 'unblock', file: '/decision-1.md' }, now,
+    )
+    expect(j).toMatchObject({ stage: 'planning', trip: 2, extraTrips: 1, decisions: ['/decision-1.md'] })
+  })
+
+  test('only what retry takes can be unblocked', () => {
+    expect(() => applyCommand(job({ stage: 'build' }), { kind: 'unblock', file: '/d.md' }, now)).toThrow('nothing to retry: 261126-x is in build')
+  })
+})
+
 describe('applyCommand: discard', () => {
   test.each(['requirements', 'build', 'needs-human', 'human-review', 'done'] as Stage[])('%s → discarded', (stage) => {
     const j = applyCommand(job({ stage }), { kind: 'discard' }, now)
@@ -397,7 +431,7 @@ describe('applyCommand: discard', () => {
 describe('waits', () => {
   test.each([
     ['human-review', true], ['needs-human', true], ['done', true], ['discarded', true],
-    ['requirements', false], ['tech-discovery', false], ['design', false], ['discovery-review', false],
+    ['requirements', true], ['tech-discovery', false], ['design', false], ['discovery-review', false],
     ['planning', false], ['build', false], ['review', false], ['build-judge', false], ['test-planning', false],
     ['rebase', false], ['qa-wait', false], ['validation', false], ['validation-judge', false], ['finalize', false],
   ] as [Stage, boolean][])('isWaiting(%s) is %p', (stage, waiting) => {

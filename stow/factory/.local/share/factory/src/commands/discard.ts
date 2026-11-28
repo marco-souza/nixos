@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { relative } from 'node:path'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
 import type { Deps } from '../deps'
 import type { Job } from '../job'
 import { applyCommand, CommandError } from '../machine'
@@ -8,8 +8,9 @@ import { prNumber } from '../ui'
 import { failed, ok, findJob, transition, type Args, type Cli } from './shared'
 
 /**
- * Stops the session, removes the worktree, closes the PR, deletes the branch and the proof branch, and marks the job
- * discarded. Each step is best effort: a failure is printed and the rest still runs. The job folder stays.
+ * Stops the driver and agents, removes the worktree, closes the PR, deletes the branch and the proof branch, marks the job
+ * discarded and moves its folder to `.factory/archive/`, so its id is free again. Each step is best effort: a failure is
+ * printed and the rest still runs.
  */
 export async function discard(repo: string, id: string, deps: Deps): Promise<Job> {
   const job = findJob(repo, id)
@@ -23,8 +24,11 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
       deps.log(failed(`${name}: ${(e as Error).message}`))
     }
   }
-  // The session first: it holds the driver, which would otherwise save over `discarded`.
-  await attempt(`stop tmux session factory-${id}`, () => deps.spawner.killSession(id))
+  // The driver first: it would otherwise save over `discarded`.
+  await attempt('stop the driver and agents', async () => {
+    await deps.spawner.kill(id, 'driver')
+    await deps.spawner.killAgents(id)
+  })
   // The worktree before the branch: git can't delete a branch a worktree has checked out.
   if (existsSync(job.worktree)) await attempt('remove worktree', () => deps.git.removeWorktree(job.worktree))
   if (job.pr) await attempt(`close PR ${prNumber(job.pr)}`, () => deps.gh.close(job.pr!))
@@ -32,7 +36,11 @@ export async function discard(repo: string, id: string, deps: Deps): Promise<Job
   // The proof screenshots finalize pushed; only on the remote, so a missing local one is fine.
   await attempt(`delete branch factory-proof/${id}`, () => deps.git.deleteBranch(`factory-proof/${id}`))
   const next = transition(repo, id, { kind: 'discard' }, deps, { running: [] })
-  deps.log(ok(`discarded ${id}; its folder stays: ${relative(repo, jobPaths(repo, id).jobDir)}`))
+  const paths = jobPaths(repo, id)
+  const to = join(paths.factoryDir, 'archive', `${id}-${deps.now().getTime()}`)
+  mkdirSync(dirname(to), { recursive: true })
+  renameSync(paths.jobDir, to)
+  deps.log(ok(`discarded ${id}; its folder is now ${relative(repo, to)}`))
   return next
 }
 

@@ -9,7 +9,6 @@ export interface Role {
   description: string
   tools: NeutralTool[]
   browser: boolean
-  interactive: boolean
   tier: Tier
   include: string[]
   body: string
@@ -17,7 +16,7 @@ export interface Role {
 
 const TOOLS: readonly string[] = ['read', 'grep', 'glob', 'bash', 'edit', 'write']
 const TIERS: readonly string[] = ['high', 'medium', 'low']
-const KEYS = ['name', 'description', 'tools', 'browser', 'interactive', 'tier', 'include']
+const KEYS = ['name', 'description', 'tools', 'browser', 'tier', 'include']
 
 function trimBlankLines(s: string): string {
   const lines = s.split('\n')
@@ -62,7 +61,6 @@ export function parseRole(text: string, file: string): Role {
     description: raw.description,
     tools: tools as NeutralTool[],
     browser: flag('browser'),
-    interactive: flag('interactive'),
     tier: raw.tier as Tier,
     include: raw.include === undefined ? ['_common'] : list(raw.include, file, 'include'),
     body: trimBlankLines(m[2] ?? ''),

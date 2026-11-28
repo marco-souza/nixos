@@ -1,26 +1,27 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { loadConfig, type FactoryConfig } from './config'
+import { loadConfig, type FactoryConfig, type Harness } from './config'
 import type { Deps } from './deps'
-import { checkOutput, type OutputKind } from './handoff'
+import { checkOutput, outputPath, type OutputKind } from './handoff'
 import { buildCommand, renderTaskPrompt, resolveHarness } from './harness'
 import { appendActivity, loadJob, saveJob, type Job } from './job'
 import { acquireLock } from './lock'
-import { isWaiting, route, type Outcome } from './machine'
+import { CommandError, isWaiting, route, type Outcome } from './machine'
 import { CLI_PATH, jobPaths, type JobPaths } from './paths'
 import { mergeDecision, mergeStatus, renderStatus } from './prbody'
 import { loadRole } from './roles'
 import { shq } from './shell'
 import { readExitCode, waitForFile, type SpawnRequest } from './spawn'
 import { docLinks, STAGES, type AgentResult, type AgentSpec, type Ctx } from './stages'
+import { formatDuration, lastTool } from './tail'
 import { nextHint, whatFor } from './ui'
 
 const POLL_MS = 2000
 
 /** Outputs whose path every visit of their stage reuses: only a write during the current visit counts. */
-const REUSED: OutputKind[] = ['requirements', 'tech-discovery', 'design', 'spec', 'test-plan', 'pr']
+const REUSED: OutputKind[] = ['requirements', 'tech-discovery', 'design', 'spec', 'test-plan', 'pr', 'report']
 
-/** The command a tmux driver window runs: `--here` drives the job in that window. */
+/** The command the background driver runs: `--here` drives the job in that process. */
 export function driverCommand(id: string): string {
   return `${shq(process.execPath)} ${shq(CLI_PATH)} run ${shq(id)} --here`
 }
@@ -45,14 +46,64 @@ export async function runJob(repo: string, id: string, deps: Deps): Promise<'wai
   }
 }
 
+export type GrillResult = { kind: 'question'; text: string } | { kind: 'done'; job: Job }
+
+/**
+ * One turn of the requirements grill, run to completion here (give it inline deps). The grill agent is headless and
+ * stateless: it reads the transcript, then writes either the next question or, once the human has confirmed, the doc.
+ * `answer` is the human's reply to the pending question; null opens the grill, or shows the pending question again.
+ * When the doc lands, the stage finishes and preflight runs here too; the caller starts the driver unless the job
+ * then waits on the human.
+ */
+export async function grillTurn(repo: string, id: string, deps: Deps, answer: string | null): Promise<GrillResult> {
+  const paths = jobPaths(repo, id)
+  if (!existsSync(paths.jobFile)) throw new CommandError(`no job ${id} (see: factory status)`)
+  const release = acquireLock(paths.jobDir)
+  try {
+    const c = context(repo, paths, loadConfig(repo), deps, loadJob(paths.jobFile))
+    if (c.job.stage !== 'requirements') throw new CommandError(`${id} is not in the grill: it is in ${c.job.stage}`)
+    enterVisit(c)
+    // A new visit (feedback, design questions) is a new conversation.
+    const visit = join(paths.grillDir, 'visit')
+    if (!existsSync(visit) || readFileSync(visit, 'utf8') !== visitKey(c.job)) {
+      rmSync(paths.grillDir, { recursive: true, force: true })
+      mkdirSync(paths.grillDir, { recursive: true })
+      writeFileSync(visit, visitKey(c.job))
+    }
+    const questionFile = join(paths.grillDir, 'question.md')
+    const transcript = join(paths.grillDir, 'transcript.md')
+    if (answer !== null) {
+      if (!existsSync(questionFile)) throw new CommandError(`no question is pending for ${id}; run: factory answer ${id}`)
+      appendFileSync(transcript, `## Question\n\n${readFileSync(questionFile, 'utf8').trim()}\n\n## Answer\n\n${answer.trim()}\n\n`)
+      rmSync(questionFile)
+    } else if (existsSync(questionFile)) {
+      return { kind: 'question', text: readFileSync(questionFile, 'utf8').trim() }
+    }
+    const spec: AgentSpec = {
+      role: 'requirements',
+      kind: 'requirements',
+      output: outputPath('requirements', { paths, cfg: c.cfg, id, trip: c.job.trips.length, n: c.job.discovery.length + 1 }),
+      assignment: `One turn of the grill. Question file: ${questionFile}`,
+      inputs: [...(c.job.questionsFile ? [c.job.questionsFile] : []), ...(c.job.reasonFile ? [c.job.reasonFile] : []), ...(existsSync(transcript) ? [transcript] : [])],
+    }
+    const r = await finishAgent(c, await startAgent(c, spec))
+    if (r.ok) {
+      rmSync(questionFile, { force: true })
+      // Preflight too, so a missing login or connector shows up in this turn's output, not an hour later.
+      while (c.job.stage === 'requirements' || c.job.stage === 'preflight') await step(c)
+      return { kind: 'done', job: c.job }
+    }
+    if (existsSync(questionFile)) return { kind: 'question', text: readFileSync(questionFile, 'utf8').trim() }
+    throw new Error(`the grill agent wrote no question and no doc (${r.problem}); see: factory logs ${id} requirements`)
+  } finally {
+    release()
+  }
+}
+
 /** Run the current stage, route its outcome, save, log, update the PR. */
 async function step(c: Ctx): Promise<void> {
   const from = c.job.stage
   enterVisit(c)
-  if (from === 'requirements') {
-    c.deps.log(`${c.job.id}: answer the grill: factory attach ${c.job.id}`)
-    await c.deps.notify({ title: `${c.job.id} needs you`, message: `Answer the grill: factory attach ${c.job.id}` })
-  }
   let outcome: Outcome
   try {
     outcome = await STAGES[from]!(c)
@@ -139,8 +190,10 @@ function questionsOf(text: string): string {
   return (end < 0 ? rest : rest.slice(0, end)).join('\n').trim()
 }
 
-function context(repo: string, paths: JobPaths, cfg: FactoryConfig, deps: Deps, job: Job): Ctx {
+function context(repo: string, paths: JobPaths, cfg: FactoryConfig, deps: Deps, saved: Job): Ctx {
   let nameWithOwner: Promise<string | null> | null = null
+  // A job from before per-job bases followed the config's base.
+  const job = saved.base ? saved : { ...saved, base: cfg.base ?? 'main' }
   const c: Ctx = {
     repo, paths, cfg, deps, job,
     update(patch) {
@@ -250,8 +303,8 @@ interface Attempt {
   spec: AgentSpec
   window: string
   req: SpawnRequest
-  interactive: boolean
   timeoutMin: number
+  stopBeat(): void
 }
 
 /** Attempt numbers count every spawn of a role in this job: retries, loops and trips. */
@@ -271,9 +324,10 @@ async function startAgent(c: Ctx, s: AgentSpec): Promise<Attempt> {
   const base = join(paths.runDir, `${s.role}-${n}`)
   const files = { system: `${base}.system.md`, task: `${base}.task.md` }
   writeFileSync(files.system, `${role.body}\n`)
-  const prompt = renderTaskPrompt({ job, paths, cfg: c.cfg, assignment: s.assignment, output: s.output, inputs: s.inputs ?? [], target: s.target ?? null })
+  const inputs = [...new Set([...(s.inputs ?? []), ...job.decisions])]
+  const prompt = renderTaskPrompt({ job, paths, cfg: c.cfg, assignment: s.assignment, output: s.output, inputs, target: s.target ?? null })
   writeFileSync(files.task, `${prompt}\n`)
-  // ASCII only: tmux targets and terminals handle it everywhere. The dashboard maps logs to windows the same way.
+  // ASCII only: safe in file names everywhere. The dashboard maps logs to windows the same way.
   const window = n === 1 ? s.role : `${s.role}-${n}`
   const req: SpawnRequest = {
     jobId: job.id,
@@ -283,29 +337,43 @@ async function startAgent(c: Ctx, s: AgentSpec): Promise<Attempt> {
     scriptFile: `${base}.sh`,
     logFile: join(paths.logsDir, `${s.role}-${n}.log`),
     doneFile: join(paths.doneDir, `${s.role}-${n}`),
-    interactive: role.interactive,
-    tail: role.interactive ? null : h.harness,
+    tail: h.harness,
   }
   c.update((j) => ({ running: [...j.running, window] }))
   c.note(`start ${window} (${h.harness}${h.model ? ` ${h.model}` : ''})`)
+  // Before start: an inline spawner returns only when the agent is done.
+  const stopBeat = heartbeat(c, window, req.logFile, h.harness)
   try {
     await c.deps.spawner.start(req)
   } catch (e) {
+    stopBeat()
     c.update((j) => ({ running: j.running.filter((w) => w !== window) }))
     throw e
   }
-  return { spec: s, window, req, interactive: role.interactive, timeoutMin: h.timeoutMin }
+  return { spec: s, window, req, timeoutMin: h.timeoutMin, stopBeat }
 }
 
-/** Waits for the attempt's done file (or, interactive, a valid new output), then checks it. */
+/** Every `deps.heartbeatMs`, a line saying the agent still runs, for how long, and its latest tool call. Returns the stop. */
+function heartbeat(c: Ctx, window: string, logFile: string, harness: Harness): () => void {
+  const ms = c.deps.heartbeatMs
+  if (!ms) return () => {}
+  // Wall time, not deps.now: this is about the human waiting.
+  const started = Date.now()
+  const timer = setInterval(() => {
+    const tool = existsSync(logFile) ? lastTool(readFileSync(logFile, 'utf8'), harness) : null
+    c.deps.log(`… ${c.job.id}: ${window} running ${formatDuration(Date.now() - started)}${tool ? `, last: ${tool}` : ''}`)
+  }, ms)
+  return () => clearInterval(timer)
+}
+
+
+/** Waits for the attempt's done file, then checks its output. */
 async function finishAgent(c: Ctx, a: Attempt): Promise<AgentResult> {
   const { deps } = c
   const id = c.job.id
-  const outputReady = () => a.interactive && writtenThisVisit(c, a.spec.output) && inspect(c, a.spec).ok
   let gone = false
-  const state = await waitForFile(() => gone || existsSync(a.req.doneFile) || outputReady(), {
-    // Interactive roles have no timeout: a human is answering.
-    timeoutMs: a.interactive ? Infinity : a.timeoutMin * 60_000,
+  const state = await waitForFile(() => gone || existsSync(a.req.doneFile), {
+    timeoutMs: a.timeoutMin * 60_000,
     pollMs: POLL_MS,
     now: () => deps.now().getTime(),
     // A window that vanished without its done file will never write one.
@@ -313,7 +381,7 @@ async function finishAgent(c: Ctx, a: Attempt): Promise<AgentResult> {
       if (await deps.spawner.isAlive(id, a.window)) await deps.sleep(ms)
       else gone = true
     },
-  })
+  }).finally(a.stopBeat)
   c.update((j) => ({ running: j.running.filter((w) => w !== a.window) }))
   const r: AgentResult = state === 'timeout' ? { ok: false, problem: `timed out after ${a.timeoutMin} min` } : result(c, a)
   // A failed window stays open for inspection.
@@ -327,7 +395,6 @@ function result(c: Ctx, a: Attempt): AgentResult {
   // At a reused path, a valid file from an earlier visit is not this agent's output.
   const stale = r.ok && REUSED.includes(a.spec.kind) && !writtenThisVisit(c, a.spec.output)
   const checked: AgentResult = stale ? { ok: false, problem: `${show(c, a.spec.output)} was not written` } : r
-  if (a.interactive) return checked
   const code = readExitCode(a.req.doneFile)
   if (code === null) return { ok: false, problem: 'the window closed before the agent finished' }
   if (code !== 0) return { ok: false, problem: `exited with code ${code}` }
