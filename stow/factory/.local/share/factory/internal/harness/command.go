@@ -12,8 +12,13 @@ import (
 )
 
 // Files are the prompt files a command reads. Prompt text is read from
-// files, never interpolated into the command line.
-type Files struct{ System, Task string }
+// files, never interpolated into the command line. Harness says which
+// harness the command is for; Command itself takes it from Resolved, but a
+// test's replacement command line (deps.Deps.CommandFor) needs it.
+type Files struct {
+	System, Task string
+	Harness      config.Harness
+}
 
 var claudeTools = map[Tool]string{
 	Read: "Read", Grep: "Grep", Glob: "Glob", Bash: "Bash", Edit: "Edit", Write: "Write",
