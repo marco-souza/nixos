@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/marco-souza/nixos/stow/factory/internal/config"
+	"github.com/marco-souza/nixos/stow/factory/internal/proc"
 )
 
 // Files are the prompt files a command reads. Prompt text is read from
@@ -21,9 +22,6 @@ var claudeTools = map[Tool]string{
 var piTools = map[Tool][]string{
 	Read: {"read"}, Grep: {"grep"}, Glob: {"find", "ls"}, Bash: {"bash"}, Edit: {"edit"}, Write: {"write"},
 }
-
-// shq single-quotes s for bash.
-func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // writeRunFile writes a generated file into the job's run folder, outside
 // the worktree, readable by the owner only.
@@ -45,7 +43,7 @@ func writeRunFile(jobDir, name string, data []byte) (string, error) {
 // worktree). A browser role also gets the Playwright MCP server, as a file
 // written to <jobDir>/run.
 func Command(role Role, r Resolved, f Files, jobDir string) (string, error) {
-	task := `"$(cat ` + shq(f.Task) + `)"`
+	task := `"$(cat ` + proc.Shq(f.Task) + `)"`
 	if r.Harness == config.Claude {
 		allowed := make([]string, 0, len(role.Tools))
 		for _, t := range role.Tools {
@@ -58,13 +56,13 @@ func Command(role Role, r Resolved, f Files, jobDir string) (string, error) {
 			}
 		}
 		denied = append(denied, "Agent")
-		args := []string{"claude", "-p", task, "--append-system-prompt-file", shq(f.System)}
+		args := []string{"claude", "-p", task, "--append-system-prompt-file", proc.Shq(f.System)}
 		if r.Model != "" {
-			args = append(args, "--model", shq(r.Model))
+			args = append(args, "--model", proc.Shq(r.Model))
 		}
 		args = append(args, "--permission-mode", "auto",
 			// Variadic like --mcp-config: each must be followed by another option, never by the prompt.
-			"--add-dir", shq(jobDir))
+			"--add-dir", proc.Shq(jobDir))
 		// No --strict-mcp-config: agents get the user's MCP servers (tickets, Slack, docs). Auto mode gates risky calls.
 		if role.Browser {
 			cfg, err := claudeMCPConfig(Playwright)
@@ -75,12 +73,12 @@ func Command(role Role, r Resolved, f Files, jobDir string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("write playwright config: %w", err)
 			}
-			args = append(args, "--mcp-config", shq(file))
+			args = append(args, "--mcp-config", proc.Shq(file))
 			allowed = append(allowed, PlaywrightTools...)
 		}
 		args = append(args,
-			"--allowedTools", shq(strings.Join(allowed, ",")),
-			"--disallowedTools", shq(strings.Join(denied, ",")),
+			"--allowedTools", proc.Shq(strings.Join(allowed, ",")),
+			"--disallowedTools", proc.Shq(strings.Join(denied, ",")),
 			"--output-format", "stream-json", "--verbose")
 		return strings.Join(args, " "), nil
 	}
@@ -89,9 +87,9 @@ func Command(role Role, r Resolved, f Files, jobDir string) (string, error) {
 	for _, t := range role.Tools {
 		allowed = append(allowed, piTools[t]...)
 	}
-	args := []string{"pi", "-p", "--append-system-prompt", shq(f.System)}
+	args := []string{"pi", "-p", "--append-system-prompt", proc.Shq(f.System)}
 	if r.Model != "" {
-		args = append(args, "--model", shq(r.Model))
+		args = append(args, "--model", proc.Shq(r.Model))
 	}
 	if role.Browser {
 		ext, err := piExtension(Playwright)
@@ -102,9 +100,9 @@ func Command(role Role, r Resolved, f Files, jobDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("write playwright extension: %w", err)
 		}
-		args = append(args, "-e", shq(file))
+		args = append(args, "-e", proc.Shq(file))
 		allowed = append(allowed, PlaywrightTools...)
 	}
-	args = append(args, "--tools", shq(strings.Join(allowed, ",")), "--mode", "json", task)
+	args = append(args, "--tools", proc.Shq(strings.Join(allowed, ",")), "--mode", "json", task)
 	return strings.Join(args, " "), nil
 }

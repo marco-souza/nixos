@@ -155,9 +155,3 @@ func TestCommandResetsLooseMode(t *testing.T) {
 	command(t, role(true, Read), claude("m"), dir)
 	checkFile(t, file, dir, "mcpServers")
 }
-
-func TestShq(t *testing.T) {
-	if got := shq("it's"); got != `'it'\''s'` {
-		t.Errorf("got %s", got)
-	}
-}
