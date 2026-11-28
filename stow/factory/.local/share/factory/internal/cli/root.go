@@ -28,6 +28,8 @@ func Execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 func newRoot(stdout, stderr io.Writer) *cobra.Command {
+	// Help lists the commands in the order they are used, not A to Z.
+	cobra.EnableCommandSorting = false
 	root := &cobra.Command{
 		Use:           "factory",
 		Short:         "Turn a feature request into a reviewed pull request",
@@ -37,6 +39,10 @@ func newRoot(stdout, stderr io.Writer) *cobra.Command {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.PersistentFlags().String("repo", "", "the repo to work on (default: the current one)")
+	root.AddCommand(
+		newNewCmd(), newAnswerCmd(), newStatusCmd(), newLogsCmd(), newApproveCmd(), newFeedbackCmd(),
+		newUnblockCmd(), newRunCmd(), newDiscardCmd(), newTailCmd(),
+	)
 	return root
 }
 
