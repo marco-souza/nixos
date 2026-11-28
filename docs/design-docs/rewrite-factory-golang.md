@@ -9,11 +9,23 @@ reference below comes from that commit. Paths are relative to the Go module
 folder `stow/factory/.local/share/factory/` unless they start with `stow/` or
 name a repo-root file.
 
-What changed since the last run: the human picked "local only" for the job
-docs. The docs stay in `.factory/jobs/<id>/docs/`, the proof ref carries only
-proof files, and the PR's `Docs:` line lists plain paths. Section 4 is
-rewritten for that. The discovery's open points are settled under "Decided
-without asking". There are no questions left.
+What changed since the last run: the discovery review found three points that
+would make the build wrong. Each is fixed here:
+
+- Tests clear git's repo-location variables before they run git, so a
+  pre-push hook fired from a worktree can't point them at the real repo
+  (section 10 "Tests", Risk 17).
+- `.factory.json` is deep-merged over the defaults as raw JSON and then
+  strictly decoded, so a partial `models.claude` keeps the other tiers
+  (section 7, Data, Risk 16).
+- `mise run install` reads its target folder from `FACTORY_BIN_DIR`, so
+  validators install into a temp folder and keep the real `HOME` (section 10,
+  Risk 3).
+
+The review's notes are folded in too: htmx's indicator styles under the CSP
+(section 9), two pi browser checks (section 6), and the folded `~/.local/bin`
+symlink and this job's own docs in the switch-over notes (section 11, Risks
+14 and 15). There are no questions.
 
 ## Approach
 
@@ -76,7 +88,7 @@ stow/factory/.local/share/factory/
   roles/*.md                  unchanged, except _common.md (section 11)
   cmd/factory/main.go         thin: os.Exit(cli.Execute(...))
   internal/
-    config/     Config, Defaults, Load(repo)                       ← config.ts
+    config/     Config, Defaults, Load(repo), merge                ← config.ts
     job/        Job, Stage, Paths, Load/Save/List, Clone, activity,
                 slots, Lock, ids (IDFor, TicketOf, CaseBranch, Slugify, TakenIDs)
                                      ← job.ts paths.ts lock.ts ids.ts (pure parts)
@@ -99,7 +111,7 @@ stow/factory/.local/share/factory/
     cli/        cobra commands: parse, call app, print   ← cli.ts, commands/* (printing)
     dashboard/  net/http server, handlers, templates/, static/, web/
                                                     ← server.ts, dashboard.html
-    testkit/    TempRepo, BuildBins, Scenario, FakeClock
+    testkit/    ClearGitEnv, TempRepo, BuildBins, Scenario, FakeClock
       fakeagent/  main: scenario-driven fake claude/pi    ← fixtures/fake-agent.ts
       fakegh/     main: recording fake gh                 ← in-process gh in e2e.test.ts
       demo/       main: seed demo jobs, serve the dashboard with fake deps
@@ -223,6 +235,10 @@ patterns below as the module's conventions, so later jobs follow one way.
   `<Self> tail --format <h>`. The driver respawns with
   `<Self> run <id> --here --repo <repo>`. `Self` comes from `Deps`, so tests
   point it at a binary they built (section 10).
+- **Tests that run git (Risk 17)**: every test package whose tests run git
+  calls `testkit.ClearGitEnv()` first in its `TestMain`, and
+  `testkit.TempRepo` refuses to start while any of those variables is set.
+  Details in section 10 "Tests".
 
 ### 4. Job flow
 
@@ -363,16 +379,39 @@ At spawn time `harness.Command` writes the file it needs into the job's
 The worktree is never touched: no `.pi/mcp.json` and no `--approve`. A unit
 test asserts both command lines. The real run is claude only, so the test
 plan adds a manual pi check: a browser role on `--harness pi` drives a page,
-and a doc role reads a doc from the job folder.
+and a doc role reads a doc from the job folder. Before that check:
+
+- Warm the npx cache with `npx -y @playwright/mcp@0.0.86 --help`. pi waits
+  only 10 s for `direct` servers before the first prompt (`docs/mcp.md:100`),
+  and a cold `npx -y` download can take longer.
+- Confirm `~/.pi/agent/mcp.json` has no `playwright` server. One there would
+  override the registered one (`docs/mcp.md:264`). There is no such file
+  today.
+
+The package README states both under browser roles.
 
 ### 7. Config and state
 
-- **`.factory.json`** stays JSON, merged over `config.Defaults()`. It is
-  decoded with `json.Decoder.DisallowUnknownFields` into the
-  defaults-filled struct. That gives today's merge rule (objects merge,
-  arrays and scalars replace) and also rejects unknown keys.
+- **`.factory.json`** stays JSON. `config.Load(repo)` ports `loadConfig`'s
+  merge rule and adds strict decoding, in this order:
+  1. `json.Marshal(config.Defaults())`, then `json.Unmarshal` into a
+     `map[string]any`.
+  2. Read `.factory.json` when it exists, into `any`. A value that is not
+     an object fails with `<file>: expected a JSON object`, as today.
+  3. `merge(defaults, repo)`, ported from `config.ts` `merge`: when both
+     sides are objects it recurses key by key. Otherwise the repo value
+     replaces the default, so arrays, scalars and `null` replace.
+  4. `json.Marshal` the merged map, then decode it with
+     `json.Decoder.DisallowUnknownFields` into a zero `Config`. Unknown keys
+     fail here, with the file path in front.
+  5. Validate `validators`, `defaultHarness` and the tiers, as today.
+
+  Decoding the repo file straight into a defaults-filled struct is not
+  enough: `encoding/json` replaces a map element instead of merging into
+  it, so `"models": {"claude": {"low": "x"}}` would drop the default
+  `medium` and `high` models (discovery review, finding 2). Merging the raw
+  objects first keeps every nested default.
   - Removed keys: `docs`, `docsCommitType` and `roles.*.harness`.
-  - `validators`, `defaultHarness` and tiers are validated as today.
   - This is plain validation, not migration: an old file with `docs` fails
     with `unknown field "docs"`, which Out of scope accepts.
 - **`job.json` v3**: v2's fields plus `harness`, with `version: 3`.
@@ -420,9 +459,16 @@ dropped.
     `<body>`.
   - Every response carries
     `Content-Security-Policy: default-src 'self'; img-src 'self' data:` and
-    `Cache-Control: no-store`. The `htmx-config` meta tag sets
-    `allowEval:false`. With no inline script allowed, rendered Markdown
-    can't run code.
+    `Cache-Control: no-store`. With no inline script allowed, rendered
+    Markdown can't run code.
+  - The `htmx-config` meta tag sets `allowEval: false` and
+    `includeIndicatorStyles: false`. htmx otherwise injects an inline
+    `<style>` for `.htmx-indicator`, which the CSP blocks, so the loading
+    indicator would never show. `web/app.css` styles `.htmx-indicator`
+    (hidden) and `.htmx-request .htmx-indicator`,
+    `.htmx-request.htmx-indicator` (shown) instead. This follows htmx's
+    config docs; the builder confirms it in the demo (a slow tab shows the
+    indicator, and the console shows no CSP error).
 - **Markdown**: goldmark with the GFM extension. It drops raw HTML and
   dangerous URLs by default; `html.WithUnsafe` is never set. An AST
   transformer points relative links and images at the job's file endpoint,
@@ -453,9 +499,9 @@ dropped.
   "github:tailwindlabs/tailwindcss" = "4.3.5"
 
   [tasks.install]
-  description = "Build factory into ~/.local/bin/factory"
+  description = "Build factory into $FACTORY_BIN_DIR (default ~/.local/bin)"
   env = { CGO_ENABLED = "0" }
-  run = 'mkdir -p "$HOME/.local/bin" && go build -trimpath -o "$HOME/.local/bin/.factory.new" ./cmd/factory && mv -f "$HOME/.local/bin/.factory.new" "$HOME/.local/bin/factory"'
+  run = 'dir="${FACTORY_BIN_DIR:-$HOME/.local/bin}" && mkdir -p "$dir" && go build -trimpath -o "$dir/.factory.new" ./cmd/factory && mv -f "$dir/.factory.new" "$dir/factory"'
 
   [tasks.css]
   run = "tailwindcss -i internal/dashboard/web/app.css -o internal/dashboard/static/app.css --minify"
@@ -466,6 +512,14 @@ dropped.
   [tasks.demo]
   run = "go run ./internal/testkit/demo"
   ```
+  - `FACTORY_BIN_DIR` is the one knob of the install task. Unset, it is
+    `$HOME/.local/bin` (req 12). Validators and builders set it to a temp
+    folder and keep the real `HOME`:
+    `d=$(mktemp -d) && FACTORY_BIN_DIR="$d" mise run install && "$d/factory" --help`.
+    mise then finds its installed tools, and Go its module and build
+    caches. A fresh `HOME` would not work: mise can't see its tools there
+    (`HOME=$(mktemp -d) mise which go` fails) and would download them again
+    (discovery review, finding 3).
   - Building to a temp name and then `mv -f` replaces the old stow symlink,
     whether it dangles or still points at the TS launcher. It also avoids
     Linux "text file busy" while a driver runs the old binary.
@@ -513,10 +567,48 @@ dropped.
     module, because golangci-lint type-checks whole packages; it runs only
     when a Go file is staged, and it never fixes, so no unstaged file
     changes behind the user's back.
+  - A push from a linked worktree runs the hook with `GIT_DIR` set to that
+    worktree's git folder. Every factory job pushes from its worktree. The
+    tests clear that variable themselves (see "Tests" below), so the hook
+    needs no `env -u` of its own.
   - The builder checks it with `lefthook validate`,
     `lefthook run pre-commit --all-files` and `lefthook run pre-push`.
     Nobody but Marco runs `lefthook install`.
 - **Tests (req 14)**: stdlib `testing`, table tests, all with `-race`.
+  - **Git's environment (Risk 17)**. Git exports `GIT_DIR` to hooks when
+    the push comes from a linked worktree. With it set, a test's
+    `git init` in a temp folder reinitializes the real repo, and its commits
+    land on the job's branch (discovery review, finding 1). So:
+    - `testkit.ClearGitEnv()` unsets every variable that points git at a
+      repository: the list `git rev-parse --local-env-vars` prints, which is
+      the list git itself clears when it enters a submodule.
+      `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG`,
+      `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_OBJECT_DIRECTORY`,
+      `GIT_DIR`, `GIT_WORK_TREE`, `GIT_IMPLICIT_WORK_TREE`,
+      `GIT_GRAFT_FILE`, `GIT_INDEX_FILE`, `GIT_NO_REPLACE_OBJECTS`,
+      `GIT_REPLACE_REF_BASE`, `GIT_PREFIX`, `GIT_SHALLOW_FILE` and
+      `GIT_COMMON_DIR`. The list is a constant in `testkit`; it covers the
+      seven the review names.
+    - Every test package whose tests run git (`internal/e2e` and
+      `internal/testkit`) has a `TestMain` that calls `ClearGitEnv()` before
+      `m.Run()`. It runs before any test, so it can use `os.Unsetenv`
+      (`testing` has `Setenv` but no `Unsetenv`, and `Setenv` panics in
+      parallel tests). Every child the tests start (`factory`,
+      `fake-agent`, `fakegh`, `git`) inherits the cleared environment.
+    - `testkit.TempRepo(t)` fails the test at once when any of those
+      variables is still set: "GIT_DIR is set: call testkit.ClearGitEnv in
+      TestMain". A future package that forgets the `TestMain` then fails
+      loudly instead of writing to the real repo.
+    - `internal/testkit/testkit_test.go` proves it.
+      `TestTempRepo` makes a `TempRepo`, commits and pushes to its bare
+      origin. `TestGitEnvCleared` makes a sentinel repo with one commit and
+      records its `HEAD`, `git for-each-ref` output and `.git/config`. Then
+      it reruns the test binary (`os.Args[0] -test.run '^TestTempRepo$'`)
+      with `GIT_DIR=<sentinel>/.git`, `GIT_WORK_TREE=<sentinel>` and
+      `GIT_INDEX_FILE=<sentinel>/.git/index` added to its environment. It
+      asserts the child passes and the sentinel's `HEAD`, refs and config
+      are unchanged. That is the hook's situation, which a hand-run
+      `lefthook run pre-push` never sets up.
   - `internal/machine/machine_test.go`: every case of `machine.test.ts`
     (about 45, many as tables), one to one, including both "never mutates
     its input" cases. Those compare against a `Clone()` taken before the
@@ -525,13 +617,20 @@ dropped.
     processes. A background agent is alive, and `Kill` takes its whole tree.
     A quick agent leaves its exit code, and `IsAlive` is false afterwards,
     which proves reaping. Plus `ExitError` keeping the last 20 lines.
+  - `internal/config/config_test.go` (table): no file gives `Defaults()`; a
+    partial `models.claude` (`{"low": "x"}`) keeps `medium` and `high`; a
+    `models.pi` entry keeps every `models.claude` tier; a partial
+    `timeoutsMin` and a single `hooks` key keep the rest; `validators`
+    replaces the array; `"base": null` gives `""`; `docs`, `docsCommitType`
+    and `roles.<name>.harness` fail as unknown fields; an unknown validator,
+    a bad `defaultHarness` and a non-object file fail with today's messages.
   - `internal/e2e/e2e_test.go`: every case of `e2e.test.ts` (12 tests), with
     real git (`testkit.TempRepo`: a repo plus a bare `origin`) and the real
     embedded roles.
-    - `TestMain` runs `go build` once into a temp `bin/` for three binaries:
-      `factory` (`Deps.Self`, for `tail`), `fake-agent` and `gh` (fakegh).
-      `gh` goes first on `PATH`, next to `claude` and `pi` stubs that exit
-      99.
+    - `TestMain` calls `testkit.ClearGitEnv()`, then runs `go build` once
+      into a temp `bin/` for three binaries: `factory` (`Deps.Self`, for
+      `tail`), `fake-agent` and `gh` (fakegh). `gh` goes first on `PATH`,
+      next to `claude` and `pi` stubs that exit 99.
     - Agents run through `CommandFor` → `fake-agent`, with the scenario of
       verdicts per role and visit in a JSON file. Builders commit,
       validators write `proof/ac<k>-…`, the grill asks once and then writes
@@ -555,6 +654,7 @@ dropped.
     - file and doc endpoint confinement, a symlink escape included
     - a doc with `<script>` and a `javascript:` link renders inert
     - approve and retry give 409 while a live driver holds the lock
+    - the page's `htmx-config` meta carries `includeIndicatorStyles: false`
   - `internal/harness/command_test.go`: the claude and pi command lines,
     with and without browser.
   - `internal/ui`: `RenderStatus`'s `Docs:` line, and `Headline` on a
@@ -594,9 +694,10 @@ dropped.
 - `AGENTS.md`:
   - The layout row for `stow/factory/` reads "(Go)".
   - Setup: `stow/factory` uses mise's Go and is installed with
-    `mise run install`, which only Marco runs. `mise run install` against the
-    real `$HOME` and `lefthook install` join `./stow.sh` in the list agents
-    never run.
+    `mise run install`. `mise run install` without `FACTORY_BIN_DIR` (it
+    writes the real `~/.local/bin`) and `lefthook install` join `./stow.sh`
+    in the list agents never run. To check the install, agents run it with
+    `FACTORY_BIN_DIR` set to a temp folder.
   - The validation row for `stow/factory/` is `mise run check` in the
     module folder. Its known-failures line stays "none".
   - The demo commands become `mise run demo`, and the dashboard is on
@@ -606,16 +707,31 @@ dropped.
   `mise run install`.
 - The package `README.md` is rewritten:
   - the commands, with `--harness`
-  - the config keys, without `docs`, `docsCommitType` or `roles.*.harness`
+  - the config keys, without `docs`, `docsCommitType` or `roles.*.harness`,
+    and the merge rule: objects merge at every depth, arrays and scalars
+    replace, unknown keys fail
   - the state: docs in `.factory/jobs/<id>/docs/`, never committed or
     pushed; the proof ref carries only proof files; the PR opens at the
     first build push
-  - browser roles on both harnesses
+  - browser roles on both harnesses, with the two pi notes from section 6
   - roles are embedded, so an edit needs `mise run install`
-  - install, checks, tests and the demo
+  - install (`FACTORY_BIN_DIR`), checks, tests (`ClearGitEnv` in
+    `TestMain` for any package whose tests run git) and the demo
   - the conventions in section 3
-  - the switch-over: after merging, run `mise run install` on each host;
-    v2 jobs and old `.factory.json` files are not read
+  - the switch-over, after merging, on each host:
+    1. If `~/.local/bin` is a symlink into the stow package (stow folded
+       it when factory was the first package with `.local/bin`), it
+       dangles once the launcher is gone, and `mkdir -p` in the install
+       task fails. Replace it with a real folder:
+       `rm ~/.local/bin && mkdir ~/.local/bin`. On the Mac it is already a
+       real folder.
+    2. Run `mise run install` in the module folder.
+    3. v2 jobs and old `.factory.json` files are not read.
+- The PR body carries a "Before merging" note, which the spec and the
+  summarizer take from here:
+  - delete this job's own `docs/*/rewrite-factory-golang.md` files from the
+    branch (Risk 15);
+  - the switch-over steps above.
 
 ### 12. Build order (for the planner)
 
@@ -626,7 +742,8 @@ dropped.
    `harness`, `ui`, `tail`.
 4. `proc` and `git`, with the spawn tests.
 5. `driver`, `app`, `cli`.
-6. `testkit` (fakeagent, fakegh) and the e2e.
+6. `testkit` (`ClearGitEnv`, `TempRepo` and their test, fakeagent, fakegh)
+   and the e2e. `ClearGitEnv` lands before the first test that runs git.
 7. `dashboard`, the CSS build, and `demo`.
 8. Remove the TS package and the launcher; update roles, skills,
    `AGENTS.md` and the READMEs.
@@ -638,10 +755,13 @@ dropped.
    a clear reason (section 4).
 2. **Stale base and push rejection.** Task 1 merges `origin/main`, no
    rebase (section 0).
-3. **Agents touching `$HOME` or `.git/hooks`.** Validators run
-   `HOME=$(mktemp -d) mise run install`, and check hooks with
-   `lefthook validate` and `lefthook run …`. `AGENTS.md` forbids both
-   commands against the real system.
+3. **Agents touching `$HOME` or `.git/hooks`.** The install task writes to
+   `$FACTORY_BIN_DIR`, default `~/.local/bin`. Validators and builders run
+   it with `FACTORY_BIN_DIR` set to a temp folder and the real `HOME`, so
+   mise finds its tools and Go its caches, and the real `~/.local/bin` is
+   untouched (section 10). Hooks are checked with `lefthook validate` and
+   `lefthook run …`, never `lefthook install`. `AGENTS.md` forbids both
+   commands against the real system (section 11).
 4. **Stow links root files.** The module stays under `.local/share/factory/`
    (section 1).
 5. **lefthook location and slow pushes.** Repo-root config scoped with
@@ -651,7 +771,8 @@ dropped.
    or user name is published (section 4).
 7. **pi and Playwright.** A generated JS extension loaded with `-e`,
    `direct` exposure, the tools named in `--tools`; the command line is
-   unit-tested, plus a manual pi check (section 6).
+   unit-tested, plus a manual pi check with a warm npx cache and no
+   `playwright` entry in `~/.pi/agent/mcp.json` (section 6).
 8. **Races and aliasing.** The `run.mu` mutex, `Clone()`, by-value machine
    functions, `-race` everywhere (section 3).
 9. **Zombies and process groups.** `Setsid` plus a `Wait` goroutine, proven
@@ -659,26 +780,40 @@ dropped.
 10. **Multi-line reasons.** Summary line plus tail, with `ui.Headline` in
     one-line places (section 3).
 11. **Dashboard security.** Host, Origin and X-Factory guards, CSP, goldmark
-    safe by default, `os.OpenRoot` on the job folder; all tested
-    (section 9).
+    safe by default, `os.OpenRoot` on the job folder; all tested. htmx's
+    inline indicator style is turned off and moved to `app.css`, so the CSP
+    stays strict (section 9).
 12. **New dependencies and build steps.** Only cobra and goldmark as Go
     deps. htmx and daisyUI vendored, Tailwind pinned in mise, the CSS
     committed. `npx` stays a runtime need for Playwright, as today.
-13. **Test-harness pitfalls.** `TestMain` builds the binaries; `Deps.Self`,
-    the fake clock and real reaping (section 10).
-14. **Switch-over.** The package README and the PR body say to run
-    `mise run install` on each host after merging. Until then
+13. **Test-harness pitfalls.** `TestMain` clears git's environment and
+    builds the binaries; `Deps.Self`, the fake clock and real reaping
+    (section 10).
+14. **Switch-over.** The package README and the PR body list the steps for
+    each host after merging: replace a folded `~/.local/bin` symlink with a
+    real folder, then `mise run install` (section 11). Until then
     `~/.local/bin/factory` dangles. TS jobs still running elsewhere break,
     which the Decisions accept.
 15. **This PR carries this job's docs.** The TS factory driving this job
     commits `docs/*/rewrite-factory-golang.md` into the branch and reads them
-    from the worktree until finalize. No task touches them (see "Decided
-    without asking").
+    from the worktree until finalize. No task touches them. The PR body's
+    "Before merging" note says to delete them, so they aren't merged by
+    accident (section 11).
 16. **Real run cost.** Guidance for the test plan: a tiny request, a scratch
     `.factory.json` with `validators: ["e2e"]`, `maxTrips: 1` and cheaper
     `models.claude` tiers, a local bare `origin`, and `fakegh` first on
     `PATH`, so `new`'s preflight (`gh auth status`,
-    `git remote get-url origin`) passes.
+    `git remote get-url origin`) passes. The binary comes from
+    `FACTORY_BIN_DIR=<temp> mise run install`. A partial `models.claude`
+    keeps the tiers it doesn't name, because the config is deep-merged
+    (section 7).
+17. **Hooks export `GIT_DIR` to the tests.** A push from a linked worktree
+    runs the pre-push hook with `GIT_DIR` set, and the tests' git commands
+    would then act on the real repo. `testkit.ClearGitEnv()` in each git
+    test package's `TestMain` unsets git's repo-location variables,
+    `TempRepo` refuses to run while any is set, and `TestGitEnvCleared`
+    reruns a git test with `GIT_DIR` on a sentinel repo and asserts the
+    sentinel is unchanged (section 10 "Tests").
 
 ### Data
 
@@ -735,14 +870,19 @@ type Config struct {
     Validators        []string                    `json:"validators"`     // e2e, user, load, capacity
     Roles             map[string]RoleOverride     `json:"roles"`          // {tier, timeoutMin}; no harness
     DefaultHarness    Harness                     `json:"defaultHarness"` // "claude"
-    Models            map[Harness]map[Tier]string `json:"models"`
+    Models            map[Harness]map[Tier]string `json:"models"`         // claude: high opus, medium sonnet, low haiku; pi: none
     TimeoutsMin       map[Tier]int                `json:"timeoutsMin"`
     MaxTrips, MaxDiscoveryLoops, QAReadyTimeoutMin, QAPollSec int
 }
+
+func Defaults() Config
+func Load(repo string) (Config, error) // defaults → map, deep-merge .factory.json, strict decode, validate
+func merge(base, over any) any          // objects recurse; anything else from over replaces
 ```
 
 The defaults are today's `config.json` minus `docs` and `docsCommitType`.
-No migration and no detection: unknown keys fail decoding.
+No migration and no detection: unknown keys in the merged document fail
+decoding.
 
 The proof ref tree is the proof files at the root, as today, and nothing
 else.
@@ -767,6 +907,9 @@ CLI (cobra). `--repo <path>` works on every command.
 
 Exit codes: 0 for OK, 1 for any error. Errors print as `factory: <msg>`.
 
+`mise run install` reads `FACTORY_BIN_DIR` (default `$HOME/.local/bin`) and
+writes `factory` there.
+
 Dashboard HTTP: every response is HTML or a static file. POSTs need
 `X-Factory: 1`.
 
@@ -785,7 +928,7 @@ Dashboard HTTP: every response is HTML or a static file. POSTs need
 `app.Retry`, `app.Feedback` and `app.Discard`, the same functions the CLI
 calls.
 
-Internal API changes in the driver:
+Internal API changes:
 
 - `driver.ensurePR(ctx, r *run) error`: a no-op while the branch has no
   commit ahead of `origin/<base>`; otherwise find or create the draft PR,
@@ -796,6 +939,10 @@ Internal API changes in the driver:
   as today, with `--no-verify`.
 - `ui.RenderStatus(job, cfg, docs []string) string`: `docs` are
   repo-relative paths, printed as code spans.
+- `config.Load(repo string) (Config, error)`: deep merge, then strict
+  decode (section 7).
+- `testkit.ClearGitEnv()`: unsets git's repo-location variables; call it in
+  `TestMain`. `testkit.TempRepo(t)` fails while any is set.
 
 ### UI
 
@@ -841,8 +988,8 @@ user sees:
   - Logs: a log picker, newest first. The view polls every 2 s and follows
     the end unless the user scrolled up.
 
-  A loading tab shows an htmx indicator. A job deleted under an open drawer
-  shows "Job not found".
+  A loading tab shows an htmx indicator, styled in `app.css` (section 9).
+  A job deleted under an open drawer shows "Job not found".
 - **Feedback from actions**:
   - On success, the board refreshes.
   - On failure, a toast shows the server's message, for example "driver
@@ -862,9 +1009,10 @@ user sees:
    Same pure machine, file state, background driver and run scripts, with
    embedded data and a server-rendered htmx dashboard. Low risk: every
    behaviour has a TS reference and a test to port. The cost is the
-   Go-specific weak spots (races, reaping, self-invocation), each handled
-   in section 3. Marco drives jobs as before, apart from `--harness`, the
-   doc location and the later PR.
+   Go-specific weak spots (races, reaping, self-invocation, test isolation
+   from git's environment), each handled in sections 3 and 10. Marco drives
+   jobs as before, apart from `--harness`, the doc location and the later
+   PR.
 2. **One long-running factory daemon.** One process owns every job's driver
    goroutine and the dashboard; the CLI talks to it over a unix socket. It
    removes pid files, self-invocation and the lock. But it adds a service
@@ -902,7 +1050,23 @@ Sub-choices inside the picked approach:
 - **Test fakes**: binaries built in `TestMain` (picked) or re-exec of the
   test binary. Built binaries test the real `factory tail`, and they keep
   test hooks out of production code beyond `Deps.Self` and
-  `Deps.CommandFor`.
+  `Deps.CommandFor`. The one re-exec is `TestGitEnvCleared`, because what
+  it tests is `TestMain` itself.
+- **Config merge**: deep-merge raw JSON, then strict decode (picked); a
+  hand-written per-field merge of `Models`; or decoding straight into the
+  defaults-filled struct. Straight decoding drops nested map defaults. A
+  per-field merge must be kept in step with every new nested map. The raw
+  merge is a port of `config.ts` `merge`, works for any depth and keeps
+  unknown-key rejection.
+- **Git env isolation**: cleared in the tests' `TestMain` (picked), or
+  `env -u GIT_DIR …` in the lefthook job. The hook fix covers only that one
+  entry point; `go test` run from any other git hook, or by an agent whose
+  shell inherited `GIT_DIR`, would still hit the real repo. Tests that make
+  their own repos must not depend on how they were started.
+- **Install target**: `FACTORY_BIN_DIR` (picked), a task argument through
+  mise's `usage` spec, or a fresh `HOME`. A fresh `HOME` hides mise's tools
+  and Go's caches. A `usage` argument works but adds a spec for one value;
+  an environment variable is one line of shell.
 
 ## Decided without asking
 
@@ -920,7 +1084,8 @@ Sub-choices inside the picked approach:
 - **The draft PR opens in build, and a build with no commit fails.**
   `gh pr create` needs a commit ahead of the base, and req 9 removes the
   requirements commit (`stages.ts` preflight, `ensurePr`). Nothing before
-  build reads the PR.
+  build reads the PR. The discovery review confirms this is forced by req 9
+  and within "breaking changes are fine".
 - **`jobs` and `archive` are reserved ids.** The worktree path
   `.factory/<id>` would otherwise land on the jobs or archive folder (weak
   spot "id/folder overlap"). It is a one-line fix in `TakenIDs`, and the
@@ -934,15 +1099,16 @@ Sub-choices inside the picked approach:
   `mise run install` after merging") already rebuilds on each change.
 - **Merge `origin/main` as task 1.** Req 1 asks only that the branch contain
   `f7fb2cf`, and the TS build push is not forced.
-- **This job's own `docs/*/rewrite-factory-golang.md` stay in the branch.**
-  The TS factory driving this job reads them from the worktree until
-  finalize and commits them again. Removing them is Marco's call after the
-  job.
+- **This job's own `docs/*/rewrite-factory-golang.md` stay in the branch
+  until Marco merges.** The TS factory driving this job reads them from the
+  worktree until finalize and commits them again, so a task can't remove
+  them. The PR body's "Before merging" note tells Marco to delete them.
 - **Default signal handling in the driver.** It dies at once, as Bun does.
   A graceful driver could overwrite `feedback`'s new cycle.
-- **Config stays JSON `.factory.json` with strict decoding.** It is the
-  existing format. Typed decoding over defaults gives the merge rule, and
-  unknown keys become errors: typo safety, not compatibility work.
+- **Config stays JSON `.factory.json`, deep-merged, then strictly decoded.**
+  It is the existing format and today's merge rule (`config.ts:41-44`).
+  Strict decoding makes unknown keys errors: typo safety, not compatibility
+  work.
 - **`defaultHarness` keeps its name.** It is still exactly the default for
   new jobs (req 5).
 - **Nullable fields become empty strings, except `ready` (`*bool`) and
@@ -950,10 +1116,14 @@ Sub-choices inside the picked approach:
 - **The failure tail is the last 20 non-empty lines, in one constant.** It
   meets req 11 and replaces the two first-line spots (`git.ts:8`,
   `stages.ts` `hook`) and `new`'s 30-line setup tail.
-- **`/api/*` JSON is dropped.** Only `dashboard.html` used it.
+- **`/api/*` JSON is dropped.** Only `dashboard.html` used it (the
+  discovery review's grep agrees).
 - **CSP, goldmark's safe defaults and `os.OpenRoot`.** Agent-written
   Markdown is untrusted (Risk 11). These replace `safeUrl`/`safeHref` and
   the hand-written symlink check.
+- **htmx's indicator styles come from `app.css`.**
+  `includeIndicatorStyles: false` keeps the CSP free of
+  `'unsafe-inline'`, which would weaken it for every page.
 - **pi gets Playwright through a generated `-e` JS extension with `direct`
   exposure.** It leaves the worktree alone. A `.pi/mcp.json` with
   `--approve` could be committed by a builder and would shadow a repo's own
@@ -968,6 +1138,10 @@ Sub-choices inside the picked approach:
 - **`-race` in tests and the pre-push hook.** Every host has `gcc`
   (`modules/shared/default.nix:36`), and races are the main Go-specific
   risk.
+- **Tests clear git's repo-location variables in `TestMain`.** Git exports
+  `GIT_DIR` to hooks pushed from a worktree, and every factory job pushes
+  from one (discovery review, finding 1). The list is git's own
+  `--local-env-vars`, so nothing git uses to find a repo is left.
 - **Stdlib-only tests, two Go deps.** The `go-service-setup` skill says "no
   deps unless forced".
 - **`lefthook.yml` at the repo root, scoped by `root` and `glob`.** lefthook
@@ -976,6 +1150,13 @@ Sub-choices inside the picked approach:
 - **Static binary (`CGO_ENABLED=0`), installed by build-then-`mv`.** Runs on
   NixOS without the loader, replaces the old stow symlink, and avoids "text
   file busy".
+- **The install target is `FACTORY_BIN_DIR`, default `~/.local/bin`.** Req
+  12 fixes the default. The variable lets checks run the real task without
+  touching the real folder or `HOME`.
+- **A folded `~/.local/bin` is fixed by hand, as a README step.** It is a
+  one-time state from stow on hosts where factory created that folder. The
+  install task doesn't detect it; `mkdir -p` fails on it, and the
+  switch-over note says what to do.
 - **Tailwind's CLI in `mise.toml` next to the three pinned tools.** Only
   `mise run css` uses it; the committed CSS means install never needs it.
 - **Cobra's default `completion` command stays.** It costs no code.
