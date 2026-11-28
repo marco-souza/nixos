@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - revive
+    - unconvert
+    - usestdlibvars
+  settings:
+    gosec:
+      excludes:
+        # Running commands and reading job files by path is what the program
+        # does. The one place where confinement matters (the dashboard file
+        # endpoint) is tested directly.
+        - G204
+        - G304
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/marco-souza/nixos/stow/factory

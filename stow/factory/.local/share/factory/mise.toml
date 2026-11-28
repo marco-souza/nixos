@@ -1,0 +1,19 @@
+[tools]
+go = "1.27.4"
+golangci-lint = "2.15.0"
+lefthook = "2.2.4"
+"github:tailwindlabs/tailwindcss" = "4.3.5"
+
+[tasks.install]
+description = "Build factory into $FACTORY_BIN_DIR (default ~/.local/bin)"
+env = { CGO_ENABLED = "0" }
+run = 'dir="${FACTORY_BIN_DIR:-$HOME/.local/bin}" && mkdir -p "$dir" && go build -trimpath -o "$dir/.factory.new" ./cmd/factory && mv -f "$dir/.factory.new" "$dir/factory"'
+
+[tasks.css]
+run = "tailwindcss -i internal/dashboard/web/app.css -o internal/dashboard/static/app.css --minify"
+
+[tasks.check]
+run = ["golangci-lint fmt --diff", "go vet ./...", "golangci-lint run ./...", "go test -race ./..."]
+
+[tasks.demo]
+run = "go run ./internal/testkit/demo"

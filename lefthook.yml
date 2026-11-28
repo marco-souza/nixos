@@ -1,0 +1,18 @@
+pre-commit:
+  jobs:
+    - name: factory fmt
+      root: stow/factory/.local/share/factory/
+      glob: "*.go"
+      run: golangci-lint fmt {staged_files}
+      stage_fixed: true
+    - name: factory lint
+      root: stow/factory/.local/share/factory/
+      glob: "*.go"
+      run: golangci-lint run ./...
+
+pre-push:
+  jobs:
+    - name: factory test
+      root: stow/factory/.local/share/factory/
+      glob: "*.go"
+      run: go test -race ./...
